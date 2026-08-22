@@ -48,7 +48,26 @@ services:
       api:
         condition: service_started
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "127.0.0.1:${WEB_PORT:-8080}:80"   # loopback only — caddy is what the internet talks to
     volumes:
       - ./media/img:/usr/share/nginx/html/img:ro
       - ./media/gif:/usr/share/nginx/html/gif:ro
+
+  # Reverse proxy + automatic HTTPS (Let's Encrypt) for RP_ID/ORIGIN in .env.
+  # Config in ./Caddyfile — not committed, since it's specific to this deployment's domain.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  caddy_data:
+  caddy_config:

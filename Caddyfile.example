@@ -1,0 +1,6 @@
+# Copy to Caddyfile on your VPS and set your real domain — must match RP_ID/ORIGIN in .env.
+# See docs/SELF_HOSTING.md section 3.
+
+treino.airlonfilho.dev {
+    reverse_proxy web:80
+}
