@@ -4,6 +4,9 @@
 // Exercise instructions come from separately generated packs in src/instr/ (one per
 // language, mostly from the upstream dataset, pt translated separately — see
 // scripts/build-instructions.mjs) — also lazy-loaded on language switch.
+// Exercise *names* are a separate pack in src/names/ — the upstream dataset never
+// shipped translated names in any language, so this only exists for languages we've
+// translated ourselves (currently just pt).
 import { useSyncExternalStore } from 'react'
 
 // UI languages. de has no instruction pack — instructions fall back to English.
@@ -13,6 +16,7 @@ export const LANGS = {
   ko: '한국어', hi: 'हिन्दी'
 }
 export const INSTR_LANGS = ['en', 'es', 'fr', 'it', 'tr', 'ru', 'zh', 'hi', 'pl', 'ko', 'pt']
+export const NAME_LANGS = ['pt']
 const DATE_LOCALES = {
   en: 'en-GB', de: 'de-DE', es: 'es-ES', fr: 'fr-FR', it: 'it-IT', pt: 'pt-PT',
   pl: 'pl-PL', tr: 'tr-TR', ru: 'ru-RU', zh: 'zh-CN', ko: 'ko-KR', hi: 'hi-IN'
@@ -20,10 +24,12 @@ const DATE_LOCALES = {
 
 const localePacks = import.meta.glob('../locales/*.js')
 const instrPacks = import.meta.glob('../instr/*.js')
+const namePacks = import.meta.glob('../names/*.js')
 
 let lang = 'en'
 let dict = {}
 let instr = null            // { exId: [steps] } for the current language, null = English
+let names = null            // { exId: name } for the current language, null = English
 let version = 0
 const subs = new Set()
 const notify = () => { version++; subs.forEach(f => f()) }
@@ -39,6 +45,9 @@ export function t(s, ...args) {
 }
 // Instructions for an exercise in the current language (English steps as fallback).
 export const instrFor = ex => (instr && instr[ex.id]) || ex.st || []
+// Name of an exercise in the current language (English name as fallback) — custom
+// exercises aren't in any names pack, so they always fall through to ex.n as typed.
+export const nameFor = ex => (names && names[ex.id]) || ex.n
 
 export async function setLang(l) {
   if (!LANGS[l]) l = 'en'
@@ -47,7 +56,8 @@ export async function setLang(l) {
   try {
     dict = l === 'en' ? {} : (await localePacks['../locales/' + l + '.js']()).default
     instr = l === 'en' || !INSTR_LANGS.includes(l) ? null : (await instrPacks['../instr/' + l + '.js']()).default
-  } catch (e) { dict = {}; instr = null }
+    names = l === 'en' || !NAME_LANGS.includes(l) ? null : (await namePacks['../names/' + l + '.js']()).default
+  } catch (e) { dict = {}; instr = null; names = null }
   notify()
 }
 
