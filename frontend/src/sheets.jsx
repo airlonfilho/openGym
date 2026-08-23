@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
-import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf } from './lib/exercises.js'
+import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf, exOr } from './lib/exercises.js'
 import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, uid, exCount, DAYN, MONTHS_LONG, ACCENTS } from './lib/format.js'
 import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps } from './lib/history.js'
 import { beep, vibrate } from './lib/sound.js'
@@ -455,6 +455,52 @@ function ExercisePicker({ onPick, close }) {
 }
 export const exercisePicker = onPick => ui().openSheet(close => <ExercisePicker onPick={onPick} close={close} />)
 
+/* ============================ substitute exercise (issue #40) ============================ */
+// "The machine is taken" — swap the current entry for anything hitting the same target
+// muscle, for this workout only. Never touches the routine, so next time it's back to normal.
+function SubstituteExercise({ entryIdx, close }) {
+  const st = useStore(s => s.S)
+  const entry = st.active.entries[entryIdx]
+  const ex = exOr(entry.id)
+  const [q, setQ] = useState('')
+  const [eq, setEq] = useState('')
+  const [shown, setShown] = useState(50)
+  const ql = q.toLowerCase().trim()
+  const pool = EXDB.filter(e => e.id !== ex.id && (ex.tg ? e.tg === ex.tg : e.bp === ex.bp))
+  const base = pool.filter(e => !ql || e.n.toLowerCase().includes(ql) || nameFor(e).toLowerCase().includes(ql) || e.eq.includes(ql))
+  const eqOpts = equipmentOf(base)
+  const eqOn = eqOpts.includes(eq) ? eq : ''
+  const f = eqOn ? base.filter(e => e.eq === eqOn) : base
+  const pick = newEx => {
+    close()
+    exConfigSheet(newEx, null, cfg => update(s => {
+      const full = { ...cfg, id: newEx.id }
+      const plan = nextPrescription(s, full, s.routines.find(r => r.id === s.active.routineId))
+      const sg = s.active.entries[entryIdx].sg
+      s.active.entries[entryIdx] = { id: newEx.id, sg, target: { ...cfg }, plan, sets: applyPrescription(buildSets(s, full), plan) }
+    }), null, st.routines.find(r => r.id === st.active.routineId), t('Swap exercise'))
+  }
+  return <>
+    <h3>{t('Swap “{0}”', nameFor(ex))}</h3>
+    <div className="muted small" style={{ marginBottom: 12 }}>{t('Exercises that train {0} — only for this workout, your routine stays the same.', t(ex.tg || ex.bp))}</div>
+    <div className="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+      <input className="input" placeholder={t('Search…')} value={q} onChange={e => { setQ(e.target.value); setShown(50) }} /></div>
+    {eqOpts.length > 1 && <div className="chips" style={{ margin: '10px 0' }}>
+      <button className={'chip nocap' + (!eqOn ? ' on' : '')} onClick={() => { setEq(''); setShown(50) }}>{t('Any equipment')}</button>
+      {eqOpts.map(x => <button key={x} className={'chip' + (eqOn === x ? ' on' : '')} onClick={() => { setEq(x); setShown(50) }}>{t(x)}</button>)}
+    </div>}
+    <div className="list">
+      {f.slice(0, shown).map(e => <div key={e.id} className="item" onClick={() => pick(e)}>
+        <Thumb ex={e} /><div className="grow"><div className="tt capitalize">{nameFor(e)}</div><div className="ss capitalize">{t(e.eq)}</div></div>
+        <Icon name="chevronRight" className="chev" />
+      </div>)}
+      {f.length === 0 && <div className="empty">{t('No other exercises train this muscle yet.')}</div>}
+    </div>
+    {f.length > shown && <><div style={{ height: 8 }} /><Button onClick={() => setShown(s => s + 50)}>{t('Show more')}</Button></>}
+  </>
+}
+export const substituteSheet = entryIdx => ui().openSheet(close => <SubstituteExercise entryIdx={entryIdx} close={close} />)
+
 /* ============================ exercise config ============================ */
 // Progression settings for one exercise (issue #17). Shown inside the config sheet because
 // "how does this lift go up" belongs next to sets and reps, not in a separate screen. Left
@@ -482,7 +528,7 @@ function ProgressionFields({ ex, mode, c, setC, routine, unit }) {
   </>
 }
 
-function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
+function ExConfig({ ex, existing, onSave, onDelete, close, routine, saveLabel }) {
   const st = useStore(s => s.S)
   const cardio = isCardio(ex.id)
   const [c, setC] = useState(existing || defaultConfig(ex.id))
@@ -591,12 +637,12 @@ function ExConfig({ ex, existing, onSave, onDelete, close, routine }) {
         : t('Reps climb by one whenever every set was clean. Set a ceiling to add sets instead of reps forever.')}
     </div>}
     <ProgressionFields ex={ex} mode={mode} c={c} setC={setC} routine={routine} unit={st.unit} />
-    <Button variant="primary" onClick={save}>{existing ? t('Save') : t('Add to routine')}</Button>
+    <Button variant="primary" onClick={save}>{existing ? t('Save') : (saveLabel || t('Add to routine'))}</Button>
     {ex.custom && <><div style={{ height: 8 }} /><Button icon="pencil" onClick={() => { close(); customExSheet(ex) }}>{t('Edit or delete this exercise')}</Button></>}
     {onDelete && <><div style={{ height: 8 }} /><Button variant="danger" onClick={() => { close(); onDelete() }}>{t('Remove from routine')}</Button></>}
   </>
 }
-export const exConfigSheet = (ex, existing, onSave, onDelete, routine) => ui().openSheet(close => <ExConfig ex={ex} existing={existing} onSave={onSave} onDelete={onDelete} routine={routine} close={close} />)
+export const exConfigSheet = (ex, existing, onSave, onDelete, routine, saveLabel) => ui().openSheet(close => <ExConfig ex={ex} existing={existing} onSave={onSave} onDelete={onDelete} routine={routine} saveLabel={saveLabel} close={close} />)
 
 /* ============================ glyph picker ============================ */
 // Grouped by what the glyph means for a training day, so picking one is a scan
