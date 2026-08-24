@@ -38,7 +38,9 @@ export default function Home() {
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6)
   const wkLabel = weekOffset === 0 ? t('This week') : `${monday.getDate()} ${monday.toLocaleDateString(dateLocale(), { month: 'short' })} – ${sunday.getDate()} ${sunday.toLocaleDateString(dateLocale(), { month: 'short' })}`
 
-  const wThisWeek = S.workouts.filter(w => weekKey(w.d) === weekKey(todayISO())).length
+  // Days trained, not sessions — a strength workout and a separate cardio session on the
+  // same day are one day of training, not two, against a per-week (not per-session) goal.
+  const wThisWeek = new Set(S.workouts.filter(w => weekKey(w.d) === weekKey(todayISO())).map(w => w.d)).size
   const plannedPerWeek = Object.keys(S.week).filter(k => S.week[k]).length
   const bwPoints = S.bodyweight.slice(-30).map(b => ({ t: b.t || new Date(b.d).getTime(), y: b.w, d: b.d }))
 
@@ -113,7 +115,7 @@ export default function Home() {
           </div>
         )}
         <div className="chart" style={{ marginTop: 8 }}><LineChart points={bwPoints} h={130} unit={S.unit} goal={S.targetW} /></div>
-      </> : <div className="muted small">{t("No entries yet — log your weight to start the curve. It's also asked before every workout.")}</div>}
+      </> : <div className="muted small">{t('No entries yet — log your weight to start the curve. You can pick a past date too.')}</div>}
     </div>
 
     <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => calendarSheet()}>

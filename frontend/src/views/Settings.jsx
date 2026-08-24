@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore, DEF, hasData } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { ACCENTS, todayISO, localTZ } from '../lib/format.js'
+import { ACCENTS, todayISO, localTZ, DAYN } from '../lib/format.js'
 import { effortOf } from '../lib/history.js'
 import { api, webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID } from '../lib/api.js'
 import { pushSupported, enablePush, disablePush, sendTestPush } from '../lib/push.js'
@@ -113,6 +113,9 @@ export default function Settings() {
           options={[{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]}
           value={S.unit} onChange={v => update(s => { s.unit = v })} />
       </Row>
+      <SelectRow icon="calendar" iconTint="var(--pink)" title={t('Weigh-in day')}
+        value={S.weighInDay} onChange={v => update(s => { s.weighInDay = v })}
+        options={[{ value: null, label: t('Never') }, ...DAYN.map((n, i) => ({ value: i, label: t(n) }))]} />
     </Section>
 
     {/* ---------- during a workout ---------- */}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf, exOr } from './lib/exercises.js'
-import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, uid, exCount, DAYN, MONTHS_LONG, ACCENTS } from './lib/format.js'
+import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, weekKey, uid, exCount, DAYN, MONTHS_LONG, ACCENTS } from './lib/format.js'
 import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps } from './lib/history.js'
 import { beep, vibrate } from './lib/sound.js'
 import { t, instrFor, nameFor, getLang, INSTR_LANGS } from './lib/i18n.js'
@@ -84,36 +84,46 @@ function WeightInput({ value, setValue, unit }) {
 }
 
 /* ============================ body weight ============================ */
-function BwSheet({ required, onDone, close }) {
+// The date defaults to today but is editable, so a weigh-in from before you started
+// using the app — or one you just forgot to log — can be backfilled instead of lost
+// (issue #44). Picking a date that already has an entry loads its weight for editing.
+function BwSheet({ close, weekly }) {
   const st = useStore(s => s.S)
   const unit = st.unit
+  const [d, setD] = useState(todayISO())
   const bw = lastBW(st)
   const [v, setV] = useState(bw ? bw.w : 70)
+  const changeDate = nd => {
+    setD(nd)
+    const ex = st.bodyweight.find(b => b.d === nd)
+    if (ex) setV(ex.w)
+  }
   const save = () => {
     const n = Math.round((v || 0) * 10) / 10
     if (!n || n <= 0) { toast(t('Enter a valid weight')); return }
     update(s => {
-      const iso = todayISO()
-      const ex = s.bodyweight.find(b => b.d === iso)
-      if (ex) { ex.w = n; ex.t = Date.now() } else s.bodyweight.push({ d: iso, w: n, t: Date.now() })
+      const ts = new Date(d).getTime()
+      const ex = s.bodyweight.find(b => b.d === d)
+      if (ex) { ex.w = n; ex.t = ts } else s.bodyweight.push({ d, w: n, t: ts })
       s.bodyweight.sort((a, b) => (a.d < b.d ? -1 : 1))
     })
     close()
-    if (onDone) onDone(n); else toast(t('Weight saved'))
+    toast(t('Weight saved'))
   }
+  // Snoozing sets a flag for the current ISO week only — the weekly prompt (see App.jsx)
+  // checks it and skips this week, then clears itself once a new week rolls around.
+  const skipThisWeek = () => { update(s => { s.weighInSnoozed = weekKey(todayISO()) }); close() }
   const recent = [...st.bodyweight].reverse().slice(0, 3)
-  const delEntry = d => update(s => { s.bodyweight = s.bodyweight.filter(b => b.d !== d) })
+  const delEntry = day => update(s => { s.bodyweight = s.bodyweight.filter(b => b.d !== day) })
   return <>
-    <h3>{required ? t('Quick check-in') : t('Log body weight')}</h3>
-    <div className="muted small">{required ? t('Slide or tap to set your weight — tracked before every workout so your curve stays honest.') : t('Today') + ', ' + fmtDate(todayISO(), true)}</div>
+    <h3>{t('Log body weight')}</h3>
+    {weekly && <div className="muted small" style={{ marginBottom: 12 }}>{t('Today is your weigh-in day.')}</div>}
+    <input type="date" className="input" value={d} max={todayISO()} onChange={e => e.target.value && changeDate(e.target.value)} style={{ marginBottom: 14 }} />
     <WeightInput value={v} setValue={setV} unit={unit} />
     <div style={{ height: 14 }} />
-    <Button variant="primary" onClick={save}>{required ? t('Save & start workout') : t('Save')}</Button>
-    {required && <>
-      <div style={{ height: 8 }} /><Button variant="ghost" className="dim" onClick={() => { close(); onDone && onDone(null) }}>{t('Start without weighing in')}</Button>
-      <div style={{ height: 2 }} /><Button variant="ghost" className="dim" icon="reset" onClick={() => { close(); nav('/workout') }}>{t('Choose a different workout')}</Button>
-    </>}
-    {!required && recent.length > 0 && <>
+    <Button variant="primary" onClick={save}>{t('Save')}</Button>
+    {weekly && <><div style={{ height: 8 }} /><Button variant="ghost" className="dim" onClick={skipThisWeek}>{t('Don’t show again this week')}</Button></>}
+    {recent.length > 0 && <>
       <h4 className="sec">{t('Recent weigh-ins')}</h4>
       <div className="list" style={{ gap: 0 }}>
         {recent.map(b => <div key={b.d} className="row between" style={{ padding: '9px 2px', borderBottom: '1px solid var(--sep)' }}>
@@ -126,8 +136,7 @@ function BwSheet({ required, onDone, close }) {
   </>
 }
 export function bwSheet(opts = {}) {
-  const h = ui().openSheet(close => <BwSheet {...opts} close={close} />, { locked: !!opts.required })
-  return h
+  return ui().openSheet(close => <BwSheet close={close} weekly={!!opts.weekly} />)
 }
 
 /* ============================ import from another app ============================ */
@@ -866,8 +875,11 @@ export function WorkoutRow({ w, onClick }) {
 }
 
 /* ============================ workout lifecycle ============================ */
+// No weigh-in prompt here — body weight is logged manually from Home, on whatever
+// cadence the person wants. A workout still carries the most recently known weight,
+// if any, so its detail view keeps showing one (issue #45).
 export function startFlow(routineId) {
-  bwSheet({ required: true, onDone: bw => beginWorkout(routineId, bw) })
+  beginWorkout(routineId, lastBW(S())?.w ?? null)
 }
 export function beginWorkout(routineId, bw) {
   const st = S()

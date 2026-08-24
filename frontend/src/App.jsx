@@ -1,13 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
 import { bindUI } from './components/ui.jsx'
-import { ACCENTS } from './lib/format.js'
+import { ACCENTS, todayISO, weekKey } from './lib/format.js'
 import { setLang, useLang } from './lib/i18n.js'
 import { setNav } from './lib/nav.js'
 import { useWakeLock } from './lib/wakelock.js'
-import { startFlow } from './sheets.jsx'
+import { startFlow, bwSheet } from './sheets.jsx'
 import Icon from './components/Icon.jsx'
 import TabBar from './components/TabBar.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
@@ -41,6 +41,7 @@ function Shell() {
   const { S, user, ready } = useStore()
   const isGuest = useStore(s => s.isGuest())
   const langV = useLang()   // re-renders the whole shell when the language (pack) changes
+  const authed = user || isGuest
   useEffect(() => { setNav(navigate) }, [navigate])
   useEffect(() => { applyPrefs(S.theme, S.accent) }, [S.theme, S.accent])
   useEffect(() => { setLang(S.lang || 'en') }, [S.lang])
@@ -49,8 +50,23 @@ function Shell() {
   useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
   // bound to the workout, not to the route — checking Stats mid-session keeps the screen on
   useWakeLock(!!S.active && S.keepAwake !== false)
+  // The weekly weigh-in prompt (issue #46): checked once per app load, not on every
+  // route change — deliberately depends only on `authed` so re-navigating doesn't
+  // re-open it. Skips a day already logged, a week snoozed, and mid-workout opens.
+  // The ref (rather than just the empty-ish deps) guards against StrictMode's dev-only
+  // double-invoke, which would otherwise stack two copies of the sheet.
+  const promptedRef = useRef(false)
+  useEffect(() => {
+    if (promptedRef.current) return
+    if (!authed || S.active || S.weighInDay == null) return
+    if (new Date().getDay() !== S.weighInDay) return
+    const today = todayISO()
+    if (S.weighInSnoozed === weekKey(today)) return
+    if (S.bodyweight.some(b => b.d === today)) return
+    promptedRef.current = true
+    bwSheet({ weekly: true })
+  }, [authed])
 
-  const authed = user || isGuest
   if (!ready && !authed) return (
     <div id="app">
       <div style={{ paddingTop: '44vh', display: 'flex', justifyContent: 'center', fontSize: 34, color: 'var(--label-3)' }}>
