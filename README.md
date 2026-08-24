@@ -164,7 +164,6 @@ Rough, community-driven — ideas and PRs welcome:
 - [x] Standalone mobile app — Android APK to sideload ([download](https://opengym.duarte-santos.ch)); on iOS as a self-hosted PWA (no store listings planned)
 - [x] Automatic progression programs (linear, Greyskull LP, double progression) with stalls and deloads
 - [x] Estimated 1RM per exercise
-- [ ] Percentage / training-max programming (5/3/1-style) on top of the progression engine
 - [ ] More starter plans (upper/lower, full-body, 5×5)
 - [x] Importers from FitNotes / Strong / Hevy (including the RPE they record), and body weight from Apple Health
 - [x] Effort per set — RIR or RPE, whichever scale you think in
