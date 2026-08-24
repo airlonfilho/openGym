@@ -172,6 +172,8 @@ Rough, community-driven — ideas and PRs welcome:
 - [ ] Per-exercise notes & plate calculator
 - [x] Exercise instructions in Portuguese (pt-BR, translated separately since the upstream dataset doesn't ship it)
 - [ ] Exercise instructions in German (UI is translated; upstream dataset doesn't ship these yet)
+- [ ] Streaks & achievements — badges for weekly streaks, PRs, and completing a progression cycle without a missed session, opt-in
+- [ ] Challenges between profiles — compare volume, streak, and frequency across profiles on the same instance
 
 ## Tech
 
