@@ -174,6 +174,8 @@ Rough, community-driven — ideas and PRs welcome:
 - [ ] Exercise instructions in German (UI is translated; upstream dataset doesn't ship these yet)
 - [ ] Streaks & achievements — badges for weekly streaks, PRs, and completing a progression cycle without a missed session, opt-in
 - [ ] Challenges between profiles — compare volume, streak, and frequency across profiles on the same instance
+- [ ] Goal-based plan templates — strength, hypertrophy, endurance, with progression pre-configured
+- [ ] Progress photos — side-by-side comparison over time, stored locally like everything else
 
 ## Tech
 
