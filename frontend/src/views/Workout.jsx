@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
-import { exOr } from '../lib/exercises.js'
+import { exOr, isBarbellEq } from '../lib/exercises.js'
 import { effectiveRoutine, lastEntryFor, bestWeightFor, buildSets, setsDoneActive, supersetUnits, unitOf, setLabel, modeOf, isBw, isPerSide, sideReps, repStep, EFFORT, effortOf, stepEffort, capEffort } from '../lib/history.js'
 import { fmtNum, fmtDate, todayISO, exCount, DAYN } from '../lib/format.js'
 import { beep, vibrate } from '../lib/sound.js'
 import { t, nameFor } from '../lib/i18n.js'
 import { api } from '../lib/api.js'
 import Media from '../components/Media.jsx'
-import { startFlow, exercisePicker, exConfigSheet, exerciseDetailSheet, substituteSheet, topWeightSheet, finishWorkout, workoutCompleteSheet, confirmSheet } from '../sheets.jsx'
+import { startFlow, exercisePicker, exConfigSheet, exerciseDetailSheet, substituteSheet, topWeightSheet, finishWorkout, workoutCompleteSheet, confirmSheet, plateCalcSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button, Check, NumberField } from '../components/ui.jsx'
 import { nextPrescription, applyPrescription } from '../lib/progression.js'
@@ -114,7 +114,15 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
       <div style={{ fontSize: compact ? 17 : 20, fontWeight: 600, letterSpacing: '-.02em', textTransform: 'capitalize', lineHeight: 1.2, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameFor(ex)}</div>
       <button className="iconbtn" aria-label={t('Details')} onClick={() => exerciseDetailSheet(ex)}><Icon name="info" /></button>
     </div>
-    {!ex.custom && <Button size="sm" variant="tinted" icon="shuffle" style={{ marginBottom: 8 }} onClick={() => substituteSheet(entryIdx)}>{t('Swap exercise')}</Button>}
+    {/* A custom exercise is never barbell equipment (eq: 'custom'), so this row only ever
+        needs rendering when it isn't one — same condition the swap button used alone before. */}
+    {!ex.custom && <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+      <Button size="sm" variant="tinted" icon="shuffle" onClick={() => substituteSheet(entryIdx)}>{t('Swap exercise')}</Button>
+      {/* Plate math only makes sense for a barbell you load by hand — a dumbbell or a stack
+          isn't put together this way (roadmap: plate calculator). */}
+      {!cardio && isBarbellEq(ex) && <Button size="sm" variant="tinted" icon="plate"
+        onClick={() => plateCalcSheet(entry.sets.find(s => !s.done)?.w || entry.sets[0]?.w || best || 0, S.unit)}>{t('Plates')}</Button>}
+    </div>}
     <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
       {cardio && <span className="tag acc"><Icon name="figureRun" />{t('Cardio')}</span>}
       {/* You log the total; this is the split, so the set in front of you is unambiguous
@@ -125,6 +133,9 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
       {best > 0 && <span className="tag nocap">{t('Best:')} {fmtNum(best)} {S.unit}</span>}
     </div>
     {last && <div className="small dim" style={{ marginBottom: 4 }}>{t('Last time')} ({fmtDate(last.d)}): {last.sets.map(s => setLabel(entry.id, s, last.target)).join(', ')}</div>}
+    {/* A permanent per-exercise reminder (roadmap: per-exercise notes), edited from the info
+        sheet — this is just the read-only preview so it's visible without opening it. */}
+    {S.exNotes?.[entry.id] && <div className="small dim" style={{ marginBottom: 4 }}><Icon name="pencil" style={{ fontSize: 12 }} /> {S.exNotes[entry.id]}</div>}
     {plan && plan.why && plan.kind !== 'off' && <div className={'progline' + (plan.kind === 'deload' ? ' warn' : '')}>
       <Icon name={plan.kind === 'up' ? 'arrowUp' : plan.kind === 'deload' ? 'arrowDown' : 'lightbulb'} />
       <span>{t(...plan.why)}</span>

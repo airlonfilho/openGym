@@ -557,4 +557,16 @@ export default {
   '{0} sets of {1} — time to add weight or move to a harder variation.': '{0} séries de {1} — hora de acrescentar peso ou passar a uma variação mais difícil.',
   '{0} per side': '{0} por lado',
   'You still log the total: {0} is {1} per side.': 'Continuas a registar o total: {0} são {1} por lado.',
+
+  // --- per-exercise notes & plate calculator ---
+  'Your notes': 'As tuas notas',
+  'Cues, setup, anything worth remembering next time': 'Dicas, configuração, o que quiseres lembrar da próxima vez',
+  'Plates': 'Anilhas',
+  'Plate calculator': 'Calculadora de anilhas',
+  'Target weight ({0})': 'Peso alvo ({0})',
+  'Bar weight ({0})': 'Peso da barra ({0})',
+  'Per side': 'Por lado',
+  'Just the bar — no plates needed.': 'Só a barra — sem anilhas necessárias.',
+  'Target is lighter than the bar.': 'O peso alvo é menor do que a barra.',
+  '{0} {1} per side can’t be made exactly with these plates.': 'Não é possível fazer {0} {1} por lado exatamente com estas anilhas.',
 }

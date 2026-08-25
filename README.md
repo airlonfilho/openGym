@@ -72,6 +72,8 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 - 📤 **Share a plan** — send someone your routines and week schedule as a small file (no workouts, no weigh-ins), or print it as a clean PDF. Importing merges, so their plan is never overwritten
 - 🔧 **Filter by equipment** — narrow the library to what you actually own; the options adapt to what you've picked, so every combination on screen has results behind it
 - ✨ **Your own exercises** — a name and a body part is enough; they behave like built-in ones everywhere, with an optional description instead of an animation
+- 📝 **Per-exercise notes** — a permanent reminder ("elbows in", "use the pad") that follows the exercise across every session, separate from its built-in description
+- 🏋️ **Plate calculator** — for barbell lifts, shows what to load per side for a target weight, with your bar weight remembered
 - 🟩 **Activity heatmap** — a GitHub-style year view, shaded by time spent training
 - 💪 **Muscle map** — a front-and-back body diagram shaded by how much work each muscle got, over a week, a month or all time. It names the muscles you *haven't* trained in that period, previews what a routine hits while you build it, and shows what you just trained when you finish. Male or female figure, your pick
 - 🔔 **Push notifications** — rest-timer alerts even with the app closed, plus an optional reminder on days you have a workout planned but haven't logged one. Opt in per profile; keys are generated on first run, nothing to configure
@@ -168,7 +170,7 @@ Rough, community-driven — ideas and PRs welcome:
 - [x] Importers from FitNotes / Strong / Hevy (including the RPE they record), and body weight from Apple Health
 - [x] Effort per set — RIR or RPE, whichever scale you think in
 - [ ] Body measurements (waist, arms…) alongside weight
-- [ ] Per-exercise notes & plate calculator
+- [x] Per-exercise notes & plate calculator
 - [x] Exercise instructions in Portuguese (pt-BR, translated separately since the upstream dataset doesn't ship it)
 - [ ] Exercise instructions in German (UI is translated; upstream dataset doesn't ship these yet)
 - [ ] Streaks & achievements — badges for weekly streaks, PRs, and completing a progression cycle without a missed session, opt-in

@@ -44,6 +44,12 @@ export const isCardio = idOrEx => (typeof idOrEx === 'string' ? EXIDX[idOrEx] : 
 export const isBodyweightEq = idOrEx =>
   (typeof idOrEx === 'string' ? EXIDX[idOrEx] : idOrEx)?.eq === 'body weight'
 
+// The plate-loaded barbell family — the plate calculator only makes sense here. Dumbbells,
+// kettlebells, cables and stacks aren't loaded by hand-picking plates per side.
+const BARBELL_EQ = new Set(['barbell', 'ez barbell', 'olympic barbell', 'smith machine', 'trap bar'])
+export const isBarbellEq = idOrEx =>
+  BARBELL_EQ.has((typeof idOrEx === 'string' ? EXIDX[idOrEx] : idOrEx)?.eq)
+
 // An id that resolves to nothing — a plan file built against a different exercise dataset,
 // a custom exercise deleted on another device before the sync arrived — still has to
 // render. A placeholder keeps it visible (and removable) instead of taking the whole view

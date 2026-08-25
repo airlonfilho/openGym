@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
-import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf, exOr } from './lib/exercises.js'
+import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, isBarbellEq, allExercises, equipmentOf, exOr } from './lib/exercises.js'
+import { platesForWeight, DEFAULT_BAR } from './lib/plates.js'
 import { fmtDate, fmtNum, fmtVol, fmtDur, durPart, todayISO, weekKey, uid, exCount, DAYN, MONTHS_LONG, ACCENTS } from './lib/format.js'
 import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolume, setsDone, setsDoneActive, lastBW, supersetUnits, unitOf, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, isBw, isPerSide, sideReps } from './lib/history.js'
 import { beep, vibrate } from './lib/sound.js'
@@ -289,6 +290,27 @@ function OneRM({ ex }) {
   </>
 }
 
+// A permanent reminder for one exercise ("elbows in", "use the pad") — separate from the
+// exercise's own description, which is shared/fixed content. Saved on blur so typing doesn't
+// thrash the store on every keystroke.
+function ExNotes({ ex }) {
+  const st = useStore(s => s.S)
+  const [v, setV] = useState(st.exNotes?.[ex.id] || '')
+  const save = txt => {
+    const clean = txt.trim().slice(0, 500)
+    if (clean === (st.exNotes?.[ex.id] || '')) return
+    update(s => {
+      if (clean) (s.exNotes = s.exNotes || {})[ex.id] = clean
+      else if (s.exNotes) delete s.exNotes[ex.id]
+    })
+  }
+  return <>
+    <h4 className="sec">{t('Your notes')}</h4>
+    <textarea className="input" rows={3} maxLength={500} placeholder={t('Cues, setup, anything worth remembering next time')}
+      value={v} onChange={e => setV(e.target.value)} onBlur={e => save(e.target.value)} />
+  </>
+}
+
 function ExerciseDetail({ ex, close }) {
   const st = useStore(s => s.S)
   const last = lastEntryFor(st, ex.id)
@@ -304,6 +326,7 @@ function ExerciseDetail({ ex, close }) {
     </div>
     {ex.desc && <div className="exnote">{ex.desc}</div>}
     {best > 0 && <div className="small row" style={{ marginBottom: 6, gap: 5 }}><Icon name="trophy" style={{ fontSize: 14, color: 'var(--yellow)' }} />{t('Best:')} <b className="accent">{fmtNum(best)} {st.unit}</b>{last ? ` · ${t('last')} ${fmtDate(last.d)}: ${last.sets.map(s => setLabel(ex.id, s, last.target)).join(', ')}` : ''}</div>}
+    <ExNotes ex={ex} />
     <Button variant="primary" icon="plus" style={{ margin: '10px 0 4px' }} onClick={() => addToRoutineSheet(ex)}>{t('Add to my plan')}</Button>
     {ex.custom && <div className="row" style={{ gap: 8, marginTop: 8 }}>
       <Button icon="pencil" style={{ flex: 1 }} onClick={() => { close(); customExSheet(ex) }}>{t('Edit')}</Button>
@@ -946,6 +969,32 @@ function TopWeight({ entryIdx, close }) {
   </>
 }
 export const topWeightSheet = entryIdx => ui().openSheet(close => <TopWeight entryIdx={entryIdx} close={close} />)
+
+/* ============================ plate calculator ============================ */
+// "What do I put on the bar" — pure math in lib/plates.js, this just wires it to a target
+// weight and lets the bar weight be adjusted (remembered per profile, since it rarely changes).
+function PlateCalc({ initTarget, unit }) {
+  const st = useStore(s => s.S)
+  const [bar, setBar] = useState(st.barbellW || DEFAULT_BAR[unit] || DEFAULT_BAR.kg)
+  const [target, setTarget] = useState(initTarget || bar)
+  const { plates, perSide, remainder, belowBar } = platesForWeight(target, bar, unit)
+  return <>
+    <h3>{t('Plate calculator')}</h3>
+    <Stepper label={t('Target weight ({0})', unit)} value={target} step={2.5} onChange={setTarget} />
+    <div style={{ height: 10 }} />
+    <Stepper label={t('Bar weight ({0})', unit)} value={bar} step={unit === 'lb' ? 5 : 2.5}
+      onChange={v => { setBar(v); update(s => { s.barbellW = v }) }} />
+    <div style={{ height: 16 }} />
+    {belowBar ? <div className="small dim">{t('Target is lighter than the bar.')}</div>
+      : plates.length === 0 ? <div className="small dim">{t('Just the bar — no plates needed.')}</div>
+        : <>
+          <div className="row between" style={{ marginBottom: 6 }}><span className="muted small">{t('Per side')}</span><b className="accent">{fmtNum(perSide)} {unit}</b></div>
+          <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>{plates.map((p, i) => <span key={i} className="tag acc nocap">{fmtNum(p)}</span>)}</div>
+          {remainder > 0 && <div className="small dim" style={{ marginTop: 8 }}>{t('{0} {1} per side can’t be made exactly with these plates.', fmtNum(remainder), unit)}</div>}
+        </>}
+  </>
+}
+export const plateCalcSheet = (initTarget, unit) => ui().openSheet(() => <PlateCalc initTarget={initTarget} unit={unit} />)
 
 // Shown when the last exercise's last set is checked — finish, or keep going.
 function WorkoutComplete({ close }) {

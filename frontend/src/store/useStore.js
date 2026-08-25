@@ -14,6 +14,10 @@ export const DEF = {
   weighInDay: null, weighInSnoozed: null,
   bodyweight: [], routines: [], week: {}, dayPlan: {},
   exWeights: {}, workouts: [], active: null, customEx: [], gifSize: 'full',
+  // exNotes: free-text reminder per exercise ("elbows in", "use the pad") — persists across
+  // sessions, unlike a workout log entry. barbellW: last bar weight used in the plate
+  // calculator; null falls back to the unit's standard bar (20 kg / 45 lb).
+  exNotes: {}, barbellW: null,
   // effort: which per-set effort scale is logged — 'none' | 'rir' | 'rpe'. null, not 'none', so
   // that a profile which never chose (loaded state is overlaid on DEF, on every path: local,
   // server pull, backup import) still falls back to the `showRir` boolean this replaced and
