@@ -1,11 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { EXIDX } from '../lib/exercises.js'
 import { lastBW, streakWeeks, setLabel, modeOf, effortOf } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
 import { t, nameFor } from '../lib/i18n.js'
-import { bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, bwDeltaColor } from '../sheets.jsx'
+import {
+  bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, bwDeltaColor, measureSheet, MEASURES, MEASURE_SLUG,
+  photoSheet, photoDetailSheet, PhotoImg
+} from '../sheets.jsx'
+import { listPhotos } from '../lib/photos.js'
+import { BADGES } from '../lib/achievements.js'
 import LineChart from '../components/LineChart.jsx'
 import Heatmap from '../components/Heatmap.jsx'
 import Icon from '../components/Icon.jsx'
@@ -129,6 +134,28 @@ function EffortCard({ S }) {
   </div>
 }
 
+// A trophy case, not a checklist — locked badges stay visible (dimmed) rather than
+// hidden, so there's always a next one in view.
+function Achievements({ S }) {
+  const have = new Set(S.achievements.map(a => a.id))
+  return <div className="card">
+    <h2>{t('Achievements')}</h2>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(76px, 1fr))', gap: 12, marginTop: 4 }}>
+      {BADGES.map(b => {
+        const got = have.has(b.id)
+        return <div key={b.id} style={{ textAlign: 'center', opacity: got ? 1 : 0.4 }}>
+          <div style={{
+            width: 46, height: 46, borderRadius: '50%', margin: '0 auto 6px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: got ? 'var(--yellow)' : 'var(--surface-2)', color: got ? 'var(--bg)' : 'var(--label-2)'
+          }}><Icon name={b.icon} size={22} /></div>
+          <div className="small" style={{ lineHeight: 1.25 }}>{t(b.name, b.n)}</div>
+        </div>
+      })}
+    </div>
+  </div>
+}
+
 // Stats = the analytics hub: all charts, progress and history live here.
 export default function Stats() {
   const nav = useNavigate()
@@ -136,6 +163,11 @@ export default function Stats() {
   const [range, setRange] = useState(90)
   const [exId, setExId] = useState(null)
   const [exMetric, setExMetric] = useState('top')
+  const [measId, setMeasId] = useState(null)
+  const [measRange, setMeasRange] = useState(90)
+  const [photos, setPhotos] = useState([])
+  const reloadPhotos = () => listPhotos().then(setPhotos)
+  useEffect(() => { reloadPhotos() }, [])
   const now = Date.now()
   const anyEffort = hasEffort(S)
   const kind = displayScale(S)
@@ -195,6 +227,15 @@ export default function Stats() {
   if (showE1) exOpts.push({ value: 'e1rm', label: t('Est. 1RM') })
   if (showEff) exOpts.push({ value: 'effort', label: t('Effort') })
 
+  const curMeas = measId && MEASURES.some(m => m.id === measId) ? measId : MEASURES[0].id
+  const measList = S.measurements[curMeas] || []
+  const measPts = measList.filter(e => measRange === 0 || (e.t || new Date(e.d).getTime()) > now - measRange * 86400000)
+    .map(e => ({ t: e.t || new Date(e.d).getTime(), y: e.v, d: e.d }))
+  // Every metric's slug lit at the same level — this diagram is a picker, not a
+  // heatmap, so "selected" is what carries meaning, not shade.
+  const measLoad = Object.fromEntries(MEASURES.map(m => [MEASURE_SLUG[m.id], 1]))
+  const slugToMeas = Object.fromEntries(MEASURES.map(m => [MEASURE_SLUG[m.id], m.id]))
+
   return <>
     <div className="hdr"><div><h1>{t('Stats')}</h1><div className="sub">{t('Progress & history')}</div></div>
       <button className="iconbtn" onClick={() => nav('/history')} aria-label={t('History')}><Icon name="history" /></button></div>
@@ -213,6 +254,7 @@ export default function Stats() {
 
     {S.workouts.length > 0 && <MuscleBalance S={S} />}
     {anyEffort && <EffortCard S={S} />}
+    {S.achievementsOn && <Achievements S={S} />}
 
     <div className="cols">
       <div className="card">
@@ -255,6 +297,39 @@ export default function Stats() {
           </div>}
         </> : <div className="muted small">{t('Finish your first workout to see progress curves here.')}</div>}
       </div>
+
+      <div className="card">
+        <div className="row between" style={{ marginBottom: 8 }}>
+          <h2 style={{ margin: 0 }}>{t('Body measurements')}</h2>
+          <Button size="sm" icon="plus" onClick={() => measureSheet({ metric: curMeas })}>{t('Log')}</Button>
+        </div>
+        <div className="sect-b" style={{ marginBottom: 10 }}>
+          <SelectRow title={t('Measurement')} sheetTitle={t('Body measurements')} value={curMeas} onChange={setMeasId}
+            options={MEASURES.map(m => ({ value: m.id, label: t(m.label) }))} />
+        </div>
+        <BodyMap className="tappable" load={measLoad} body={S.body} selected={MEASURE_SLUG[curMeas]}
+          onMuscle={slug => { const m = slugToMeas[slug]; if (m) setMeasId(m) }} />
+        <Segmented className="seg-range" value={measRange} onChange={setMeasRange}
+          options={[{ value: 30, label: '1M' }, { value: 90, label: '3M' }, { value: 365, label: '1Y' }, { value: 0, label: t('All') }]} />
+        <div className="chart"><LineChart points={measPts} h={150} unit={S.measureUnit} /></div>
+      </div>
+    </div>
+
+    <div className="card">
+      <div className="row between" style={{ marginBottom: 8 }}>
+        <h2 style={{ margin: 0 }}>{t('Progress photos')}</h2>
+        <Button size="sm" icon="plus" onClick={() => photoSheet({ onSaved: reloadPhotos })}>{t('Add')}</Button>
+      </div>
+      {photos.length ? (
+        <div className="row" style={{ gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+          {[...photos].reverse().map(p => (
+            <button key={p.id} onClick={() => photoDetailSheet(p.id, p.d, reloadPhotos)}
+              style={{ flexShrink: 0, width: 72, height: 96, borderRadius: 10, overflow: 'hidden', border: 'none', padding: 0 }}>
+              <PhotoImg id={p.id} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </button>
+          ))}
+        </div>
+      ) : <div className="muted small">{t('No photos yet — add one to start tracking visually.')}</div>}
     </div>
 
     {S.workouts.length > 0 && <>

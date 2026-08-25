@@ -8,7 +8,7 @@ import { lastEntryFor, bestWeightFor, buildSets, effectiveRoutineId, workoutVolu
 import { beep, vibrate } from './lib/sound.js'
 import { t, instrFor, nameFor, getLang, INSTR_LANGS } from './lib/i18n.js'
 import { nav } from './lib/nav.js'
-import { starterRoutines } from './lib/starter.js'
+import { STARTER_PLANS, GOALS, buildStarterPlan } from './lib/starter.js'
 import Media, { Thumb } from './components/Media.jsx'
 import Stepper from './components/Stepper.jsx'
 import Icon from './components/Icon.jsx'
@@ -20,7 +20,9 @@ import { parseImport, mergeImport } from './lib/import-csv.js'
 import { buildPlanBundle, parsePlan, mergePlan, printPlan } from './lib/plan-share.js'
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
 import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC, MAX_BW_SETS } from './lib/progression.js'
+import { BADGES, newlyEarned } from './lib/achievements.js'
 import { MOBILE, shareExport } from './lib/mobile.js'
+import { listPhotos, getPhotoBlob, savePhoto, deletePhoto } from './lib/photos.js'
 
 const S = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -44,14 +46,51 @@ export function confirmSheet(opts) {
 }
 
 /* ============================ starter plan ============================ */
-export function loadStarterPlan() {
-  const [push, pull, legs] = starterRoutines()
+export function loadStarterPlan(planId = 'ppl', goalId = null) {
+  const { plan, routines, week } = buildStarterPlan(planId, goalId)
+  const goal = GOALS.find(g => g.id === goalId)
   update(st => {
-    st.routines.push(push, pull, legs)
-    st.week[1] = push.id; st.week[3] = pull.id; st.week[5] = legs.id
+    st.routines.push(...routines)
+    week.forEach(([day, routineId]) => { st.week[day] = routineId })
   })
-  toast(t('Starter plan loaded — Mon Push · Wed Pull · Fri Legs'))
+  toast(t('Starter plan loaded: {0}', t(plan.name) + (goal ? ' · ' + t(goal.name) : '')))
 }
+
+// 5×5 skips the goal step — it already is one, and remapping its scheme onto a
+// different goal (a 1-set-of-5 deadlift under "hypertrophy"?) would defeat it.
+function StarterPlanSheet({ close }) {
+  return <>
+    <h3>{t('Choose a starter plan')}</h3>
+    <div className="sect-b">
+      {STARTER_PLANS.map(p => (
+        <button key={p.id} className="lrow tap" onClick={() => {
+          close()
+          if (p.id === 'fiveByFive') loadStarterPlan(p.id)
+          else starterGoalSheet(p.id)
+        }}>
+          <span className="lrow-m"><span className="lrow-t">{t(p.name)}</span><span className="lrow-s">{t(p.desc)}</span></span>
+          <Icon name="chevronRight" className="lrow-c" />
+        </button>
+      ))}
+    </div>
+  </>
+}
+export const starterPlanSheet = () => ui().openSheet(close => <StarterPlanSheet close={close} />)
+
+function StarterGoalSheet({ close, planId }) {
+  return <>
+    <h3>{t('Choose a goal')}</h3>
+    <div className="sect-b">
+      {GOALS.map(g => (
+        <button key={g.id} className="lrow tap" onClick={() => { close(); loadStarterPlan(planId, g.id) }}>
+          <span className="lrow-m"><span className="lrow-t">{t(g.name)}</span><span className="lrow-s">{t(g.desc)}</span></span>
+          <Icon name="chevronRight" className="lrow-c" />
+        </button>
+      ))}
+    </div>
+  </>
+}
+export const starterGoalSheet = planId => ui().openSheet(close => <StarterGoalSheet close={close} planId={planId} />)
 
 /* ============================ weight picker (shared: body weight + goal) ============================ */
 // Fixed range, not a moving window — a window that resizes itself mid-drag (the previous
@@ -139,6 +178,195 @@ function BwSheet({ close, weekly }) {
 export function bwSheet(opts = {}) {
   return ui().openSheet(close => <BwSheet close={close} weekly={!!opts.weekly} />)
 }
+
+/* ============================ body measurements ============================ */
+export const MEASURES = [
+  { id: 'waist', label: 'Waist' },
+  { id: 'chest', label: 'Chest' },
+  { id: 'arms', label: 'Arms' },
+  { id: 'thighs', label: 'Thighs' },
+  { id: 'hips', label: 'Hips' },
+]
+// One representative BodyMap slug per metric, so the diagram can highlight and pick
+// a measurement the same way Muscle Balance picks a muscle. Hips sits on the back
+// view (glutes), everything else on the front — the highlight is what tells you
+// which, not which side of the diagram you happen to be looking at.
+export const MEASURE_SLUG = { waist: 'abs', chest: 'chest', arms: 'biceps', thighs: 'quadriceps', hips: 'gluteal' }
+// Rough starting point per metric so a first-ever entry doesn't open on an arbitrary
+// number — overridden immediately once there's a real last reading to default to instead.
+const DEFAULT_CM = { waist: 80, chest: 95, arms: 35, thighs: 55, hips: 95 }
+const defaultMeasure = (metric, unit) => {
+  const cm = DEFAULT_CM[metric] || 50
+  return unit === 'in' ? Math.round(cm / 2.54) : cm
+}
+
+// Same shape as WeightInput (fixed range, not a moving window — see comment above), tuned
+// for a tape measure's precision: whole units by default, half-steps via the +/- buttons.
+const M_LO = 10
+const mHi = unit => (unit === 'in' ? 100 : 250)
+function MeasureInput({ value, setValue, unit }) {
+  const M_HI = mHi(unit)
+  const clamp = x => Math.max(M_LO, Math.min(M_HI, Math.round((x || 0) * 10) / 10))
+  const sv = Math.max(M_LO, Math.min(M_HI, value))
+  const onSlide = v => setValue(clamp(v))
+  return <>
+    <div className="bwstep">
+      <button className="bw-pm" onClick={() => onSlide(value - 0.5)} aria-label="minus 0.5"><Icon name="minus" /></button>
+      <div className="bw-read">{fmtNum(value)}<span className="u"> {unit}</span></div>
+      <button className="bw-pm" onClick={() => onSlide(value + 0.5)} aria-label="plus 0.5"><Icon name="plus" /></button>
+    </div>
+    <div className="chips" style={{ justifyContent: 'center', margin: '8px 0' }}>
+      <button className="chip" onClick={() => onSlide(value - 5)}>−5</button>
+      <button className="chip" onClick={() => onSlide(value - 1)}>−1</button>
+      <button className="chip" onClick={() => onSlide(value + 1)}>+1</button>
+      <button className="chip" onClick={() => onSlide(value + 5)}>+5</button>
+    </div>
+    <Slider value={sv} min={M_LO} max={M_HI} step={0.5} onChange={onSlide} />
+  </>
+}
+
+// One metric per sheet (matches BwSheet) — which one is decided by whoever opens it
+// (the metric picker lives in the Stats card), not re-chosen here.
+function MeasureSheet({ close, metric }) {
+  const st = useStore(s => s.S)
+  const unit = st.measureUnit
+  const list = st.measurements[metric] || []
+  const [d, setD] = useState(todayISO())
+  const last = list[list.length - 1]
+  const [v, setV] = useState(last ? last.v : defaultMeasure(metric, unit))
+  const changeDate = nd => {
+    setD(nd)
+    const ex = list.find(e => e.d === nd)
+    if (ex) setV(ex.v)
+  }
+  const save = () => {
+    const n = Math.round((v || 0) * 10) / 10
+    if (!n || n <= 0) { toast(t('Enter a valid measurement')); return }
+    update(s => {
+      const arr = s.measurements[metric] || (s.measurements[metric] = [])
+      const ts = new Date(d).getTime()
+      const ex = arr.find(e => e.d === d)
+      if (ex) { ex.v = n; ex.t = ts } else arr.push({ d, v: n, t: ts })
+      arr.sort((a, b) => (a.d < b.d ? -1 : 1))
+    })
+    close()
+    toast(t('Measurement saved'))
+  }
+  const recent = [...list].reverse().slice(0, 3)
+  const delEntry = day => update(s => { s.measurements[metric] = (s.measurements[metric] || []).filter(e => e.d !== day) })
+  const label = t((MEASURES.find(m => m.id === metric) || {}).label || metric)
+  return <>
+    <h3>{t('Log measurement')} · {label}</h3>
+    <input type="date" className="input" value={d} max={todayISO()} onChange={e => e.target.value && changeDate(e.target.value)} style={{ marginBottom: 14 }} />
+    <MeasureInput value={v} setValue={setV} unit={unit} />
+    <div style={{ height: 14 }} />
+    <Button variant="primary" onClick={save}>{t('Save')}</Button>
+    {recent.length > 0 && <>
+      <h4 className="sec">{t('Recent measurements')}</h4>
+      <div className="list" style={{ gap: 0 }}>
+        {recent.map(e => <div key={e.d} className="row between" style={{ padding: '9px 2px', borderBottom: '1px solid var(--sep)' }}>
+          <span className="small muted">{fmtDate(e.d, true)}</span>
+          <span className="row" style={{ gap: 12 }}><b>{fmtNum(e.v)} {unit}</b>
+            <button className="iconbtn" style={{ width: 32, height: 30, borderRadius: 8, fontSize: 15, color: 'var(--red)' }} onClick={() => delEntry(e.d)} aria-label="delete"><Icon name="trash" /></button></span>
+        </div>)}
+      </div>
+    </>}
+  </>
+}
+export function measureSheet(opts = {}) {
+  return ui().openSheet(close => <MeasureSheet close={close} metric={opts.metric || MEASURES[0].id} />)
+}
+
+/* ============================ progress photos ============================ */
+// Loads its blob from IndexedDB on mount and revokes the object URL on unmount — every
+// thumbnail and full view in this section is one of these, never a raw <img src>.
+export function PhotoImg({ id, style }) {
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    let alive = true, obj = null
+    getPhotoBlob(id).then(b => { if (alive && b) { obj = URL.createObjectURL(b); setUrl(obj) } })
+    return () => { alive = false; if (obj) URL.revokeObjectURL(obj) }
+  }, [id])
+  return url ? <img src={url} style={{ display: 'block', ...style }} /> : <div style={{ background: 'var(--surface-2)', ...style }} />
+}
+
+function PhotoSheet({ close, date, onSaved }) {
+  const [d, setD] = useState(date || todayISO())
+  const [file, setFile] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef(null)
+  const preview = file ? URL.createObjectURL(file) : null
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
+  const save = async () => {
+    if (!file) { fileRef.current?.click(); return }
+    setBusy(true)
+    await savePhoto(file, d)
+    setBusy(false)
+    close()
+    onSaved && onSaved()
+    toast(t('Photo saved'))
+  }
+  return <>
+    <h3>{t('Add progress photo')}</h3>
+    <input type="date" className="input" value={d} max={todayISO()} onChange={e => e.target.value && setD(e.target.value)} style={{ marginBottom: 14 }} />
+    <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => e.target.files[0] && setFile(e.target.files[0])} />
+    {preview
+      ? <img src={preview} style={{ width: '100%', maxHeight: 340, objectFit: 'contain', borderRadius: 14, marginBottom: 14, display: 'block', background: 'var(--surface-2)' }} />
+      : <button onClick={() => fileRef.current?.click()} style={{
+        width: '100%', aspectRatio: '3/4', maxHeight: 260, borderRadius: 14, border: '2px dashed var(--sep)', background: 'none',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--label-2)', marginBottom: 14
+      }}><Icon name="camera" size={30} /><span className="small">{t('Choose photo')}</span></button>}
+    <Button variant="primary" disabled={busy} onClick={save}>{file ? t('Save') : t('Choose photo')}</Button>
+  </>
+}
+export const photoSheet = (opts = {}) => ui().openSheet(close => <PhotoSheet close={close} date={opts.date} onSaved={opts.onSaved} />)
+
+function PhotoDetailSheet({ close, id, d, onChange }) {
+  const del = () => confirmSheet({
+    title: t('Delete photo?'), danger: true, confirmText: t('Delete'),
+    onConfirm: async () => { await deletePhoto(id); close(); onChange && onChange(); toast(t('Photo deleted')) }
+  })
+  return <>
+    <h3>{fmtDate(d, true)}</h3>
+    <PhotoImg id={id} style={{ width: '100%', maxHeight: 400, objectFit: 'contain', borderRadius: 14, marginBottom: 14, background: 'var(--surface-2)' }} />
+    <Button variant="ghost" icon="chartLine" onClick={() => { close(); photoCompareSheet(id) }}>{t('Compare with another')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="danger" icon="trash" onClick={del}>{t('Delete photo')}</Button>
+  </>
+}
+export const photoDetailSheet = (id, d, onChange) => ui().openSheet(close => <PhotoDetailSheet close={close} id={id} d={d} onChange={onChange} />)
+
+function PhotoCompareSheet({ close, firstId }) {
+  const [photos, setPhotos] = useState([])
+  const [secondId, setSecondId] = useState(null)
+  useEffect(() => { listPhotos().then(setPhotos) }, [])
+  const first = photos.find(p => p.id === firstId)
+  const second = photos.find(p => p.id === secondId)
+  if (!second) {
+    const others = photos.filter(p => p.id !== firstId)
+    return <>
+      <h3>{t('Compare with…')}</h3>
+      {others.length ? <div className="sect-b">
+        {others.map(p => (
+          <button key={p.id} className="lrow tap" onClick={() => setSecondId(p.id)}>
+            <span className="lrow-m"><span className="lrow-t">{fmtDate(p.d, true)}</span></span>
+            <Icon name="chevronRight" className="lrow-c" />
+          </button>
+        ))}
+      </div> : <div className="muted small">{t('Add another photo first to compare.')}</div>}
+    </>
+  }
+  return <>
+    <h3>{t('Compare')}</h3>
+    <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+      {[first, second].map(p => <div key={p.id} style={{ flex: 1, minWidth: 0 }}>
+        <PhotoImg id={p.id} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: 10, background: 'var(--surface-2)' }} />
+        <div className="small muted" style={{ textAlign: 'center', marginTop: 6 }}>{fmtDate(p.d, true)}</div>
+      </div>)}
+    </div>
+  </>
+}
+export const photoCompareSheet = firstId => ui().openSheet(close => <PhotoCompareSheet close={close} firstId={firstId} />)
 
 /* ============================ import from another app ============================ */
 // Shows what a parsed export would actually do before anything is written. An import is
@@ -1009,7 +1237,7 @@ function WorkoutComplete({ close }) {
 }
 export const workoutCompleteSheet = () => ui().openSheet(close => <WorkoutComplete close={close} />, { kind: 'center' })
 
-function FinishSummary({ w, prs, e1prs = [], close }) {
+function FinishSummary({ w, prs, e1prs = [], earned = [], close }) {
   const st = useStore(s => s.S)
   return <div style={{ textAlign: 'center', padding: '8px 0' }}>
     <div style={{ fontSize: 44, display: 'flex', justifyContent: 'center', color: 'var(--acc)' }}><Icon name="trophy" /></div>
@@ -1023,6 +1251,10 @@ function FinishSummary({ w, prs, e1prs = [], close }) {
     {(prs.length > 0 || e1prs.length > 0) && <div style={{ textAlign: 'left', marginBottom: 12 }}>
       {prs.map(id => <div key={id} className="small accent capitalize row" style={{ gap: 5 }}><Icon name="trophy" style={{ fontSize: 13 }} />{t('New PR:')} {nameFor(EXIDX[id] || { id, n: id })}</div>)}
       {e1prs.map(p => <div key={p.id} className="small accent capitalize row" style={{ gap: 5 }}><Icon name="chartLine" style={{ fontSize: 13 }} />{t('Best estimated 1RM:')} {nameFor(EXIDX[p.id] || { id: p.id, n: p.id })} · {fmtNum(p.est)} {st.unit}</div>)}
+    </div>}
+    {earned.length > 0 && <div style={{ textAlign: 'left', marginBottom: 12 }}>
+      {earned.map(id => { const b = BADGES.find(x => x.id === id); if (!b) return null
+        return <div key={id} className="small row" style={{ gap: 5, color: 'var(--yellow)' }}><Icon name={b.icon} style={{ fontSize: 13 }} />{t('Badge unlocked:')} {t(b.name, b.n)}</div> })}
     </div>}
     <h4 className="sec" style={{ textAlign: 'left' }}>{t('What you just trained')}</h4>
     <BodyMap load={loadOfWorkouts([w])} body={st.body} />
@@ -1070,7 +1302,12 @@ function doFinishWorkout() {
     s.workouts.push(w)
     s.active = null
   })
+  let earned = []
+  if (S().achievementsOn) {
+    earned = newlyEarned(S())
+    if (earned.length) update(s => { earned.forEach(id => s.achievements.push({ id, d: w.d })) })
+  }
   useUI.getState().stopRest()
   beep(snd(), 880, 0.15); beep(snd(), 1100, 0.15, 0.18); beep(snd(), 1320, 0.3, 0.36)
-  ui().openSheet(close => <FinishSummary w={w} prs={prs} e1prs={e1prs} close={close} />, { kind: 'center', locked: true })
+  ui().openSheet(close => <FinishSummary w={w} prs={prs} e1prs={e1prs} earned={earned} close={close} />, { kind: 'center', locked: true })
 }

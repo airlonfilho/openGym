@@ -4,13 +4,14 @@ import { useStore, DEF, hasData } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { ACCENTS, todayISO, localTZ, DAYN } from '../lib/format.js'
 import { effortOf } from '../lib/history.js'
+import { newlyEarned } from '../lib/achievements.js'
 import { api, webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID } from '../lib/api.js'
 import { pushSupported, enablePush, disablePush, sendTestPush } from '../lib/push.js'
 import { wakeLockSupported } from '../lib/wakelock.js'
 import { t, LANGS, INSTR_LANGS } from '../lib/i18n.js'
 import { DEMO, REPO } from '../lib/demo.js'
 import { MOBILE, shareExport, syncReminder } from '../lib/mobile.js'
-import { loadStarterPlan, confirmSheet, importFromApp } from '../sheets.jsx'
+import { starterPlanSheet, confirmSheet, importFromApp } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { Section, Row, SelectRow, Switch, Segmented, Button, TextField } from '../components/ui.jsx'
 
@@ -113,6 +114,11 @@ export default function Settings() {
           options={[{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]}
           value={S.unit} onChange={v => update(s => { s.unit = v })} />
       </Row>
+      <Row icon="expand" iconTint="var(--indigo)" title={t('Measurement unit')}>
+        <Segmented className="seg-inline"
+          options={[{ value: 'cm', label: 'cm' }, { value: 'in', label: 'in' }]}
+          value={S.measureUnit} onChange={v => update(s => { s.measureUnit = v })} />
+      </Row>
       <SelectRow icon="calendar" iconTint="var(--pink)" title={t('Weigh-in day')}
         value={S.weighInDay} onChange={v => update(s => { s.weighInDay = v })}
         options={[{ value: null, label: t('Never') }, ...DAYN.map((n, i) => ({ value: i, label: t(n) }))]} />
@@ -140,6 +146,14 @@ export default function Settings() {
         <Segmented className="seg-inline"
           options={[{ value: 'none', label: t('Off') }, { value: 'rir', label: t('RIR') }, { value: 'rpe', label: t('RPE') }]}
           value={effortOf(S)} onChange={v => update(s => { s.effort = v; delete s.showRir })} />
+      </Row>
+      <Row icon="flame" iconTint="var(--orange)" title={t('Streaks & achievements')}>
+        <Switch checked={!!S.achievementsOn} onChange={v => update(s => {
+          s.achievementsOn = v
+          // Switching on credits whatever the existing history already qualifies for —
+          // silently, no unlock popups for a decade of past workouts all at once.
+          if (v) newlyEarned(s).forEach(id => s.achievements.push({ id, d: todayISO() }))
+        })} />
       </Row>
     </Section>
 
@@ -177,7 +191,7 @@ export default function Settings() {
 
     {/* ---------- data: fill it, bring things over, back it up, wipe it ---------- */}
     <Section title={t('Data')}>
-      <Row icon="sparkles" iconTint="var(--acc)" title={t('Load starter plan (PPL)')} accessory="chevron" onClick={loadStarterPlan} />
+      <Row icon="sparkles" iconTint="var(--acc)" title={t('Load starter plan')} accessory="chevron" onClick={starterPlanSheet} />
       <Row icon="shuffle" iconTint="var(--teal)" title={t('Import from another app')}
         subtitle={t('FitNotes, Strong, Hevy — or body weight from Apple Health')}
         accessory="chevron" onClick={() => importRef.current.click()} />

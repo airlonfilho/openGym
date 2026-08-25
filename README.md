@@ -56,10 +56,11 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 
 ## Features
 
-- ⚖️ **Body-weight tracking** — interactive chart with a goal line you set, gains/losses colored by whether they move toward it
+- ⚖️ **Body-weight tracking** — interactive chart with a goal line you set, gains/losses colored by whether they move toward it. Backdatable, and an optional weekly weigh-in-day prompt — never forced before a workout
+- 📏 **Body measurements** — waist, chest, arms, thighs, hips, each with its own backdatable log and chart, cm or in
 - 🏋️ **Weekly plan** — a routine per weekday, over a library of **1,324 exercises** (searchable, with animated demos)
 - 🗓️ **Reschedule any day** — sick, missed a session, or fewer gym days this week? Move a workout to another day without touching your weekly plan
-- ▶️ **Guided workouts** — it knows what day it is and starts today's session; asks your body weight first, pre-fills your weights from last time, rest timer, PR detection, per-exercise weight tracking
+- ▶️ **Guided workouts** — it knows what day it is and starts today's session, pre-fills your weights from last time, rest timer, PR detection, per-exercise weight tracking
 - ☀️ **The screen stays awake while you train** — no unlocking the phone and finding your place again between every set. On for as long as a workout is running, released the moment you finish it, and switchable off in Settings
 - 🔗 **Supersets** — build them, and log them back-to-back with a rest only after the pair
 - ⏱️ **Timed exercises** — planks, hangs, wall sits and loaded carries are logged by time, not reps, with a work timer that counts the set itself (separate from the rest timer) and logs the time you actually held. They can carry weight too
@@ -76,11 +77,12 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 - 🏋️ **Plate calculator** — for barbell lifts, shows what to load per side for a target weight, with your bar weight remembered
 - 🟩 **Activity heatmap** — a GitHub-style year view, shaded by time spent training
 - 💪 **Muscle map** — a front-and-back body diagram shaded by how much work each muscle got, over a week, a month or all time. It names the muscles you *haven't* trained in that period, previews what a routine hits while you build it, and shows what you just trained when you finish. Male or female figure, your pick
+- 🏅 **Streaks & achievements** (opt-in) — badges for weekly streaks, lifetime PRs, and completing a stretch of sessions on an exercise without missing a target. A trophy case, not a checklist: locked badges stay visible, and nothing is shown at all until you turn it on in Settings
 - 🔔 **Push notifications** — rest-timer alerts even with the app closed, plus an optional reminder on days you have a workout planned but haven't logged one. Opt in per profile; keys are generated on first run, nothing to configure
 - 🔑 **Passkeys, not passwords** — Face ID / Touch ID / fingerprint login; each profile keeps its own data, synced across devices
 - 🛠️ **Admin dashboard** (optional) — for whoever runs the instance: who's training right now, per-user history, disable accounts, and invite-only signup. Off by default, so a fresh instance stays open with no admin
 - 🎨 **Designed, not assembled** — light/dark themes and 8 accent colors saved to your profile, over a hand-drawn icon set instead of emoji, so it looks the same on every phone
-- 🌍 **12 languages** — full UI translation (EN, DE, ES, FR, IT, PT, PL, TR, RU, ZH, KO, HI); exercise instructions localized in 11 of them, loaded on demand so the app stays fast
+- 🌍 **EN + PT-BR** — full UI translation, Portuguese (Brazil) as the default, English available in Settings; exercise instructions localized in both
 - 📥 **Bring your history with you** — import from **FitNotes** (Android and iOS), **Strong** and **Hevy**, or body weight straight out of an **Apple Health** export. Exercise names are matched against the library and anything unrecognised becomes one of your own exercises, so nothing in the file is dropped
 - 📦 **Yours to keep** — one-tap JSON export/import, guest mode, **no telemetry**
 - 📱 **Standalone Android app** — the whole tracker as a sideloadable APK: no account, no server, data on the phone, native workout reminders ([download](https://opengym.duarte-santos.ch))
@@ -166,17 +168,17 @@ Rough, community-driven — ideas and PRs welcome:
 - [x] Standalone mobile app — Android APK to sideload ([download](https://opengym.duarte-santos.ch)); on iOS as a self-hosted PWA (no store listings planned)
 - [x] Automatic progression programs (linear, Greyskull LP, double progression) with stalls and deloads
 - [x] Estimated 1RM per exercise
-- [ ] More starter plans (upper/lower, full-body, 5×5)
+- [x] More starter plans (upper/lower, full-body, 5×5)
 - [x] Importers from FitNotes / Strong / Hevy (including the RPE they record), and body weight from Apple Health
 - [x] Effort per set — RIR or RPE, whichever scale you think in
-- [ ] Body measurements (waist, arms…) alongside weight
+- [x] Body measurements (waist, chest, arms, thighs, hips) alongside weight
 - [x] Per-exercise notes & plate calculator
 - [x] Exercise instructions in Portuguese (pt-BR, translated separately since the upstream dataset doesn't ship it)
-- [ ] Exercise instructions in German (UI is translated; upstream dataset doesn't ship these yet)
-- [ ] Streaks & achievements — badges for weekly streaks, PRs, and completing a progression cycle without a missed session, opt-in
+- [x] Scope cut to English + Portuguese (BR) only, Portuguese as the default — dropped the other 10 UI languages rather than chase upstream exercise-instruction coverage for each
+- [x] Streaks & achievements — badges for weekly streaks, PRs, and completing a progression cycle without a missed session, opt-in
 - [ ] Challenges between profiles — compare volume, streak, and frequency across profiles on the same instance
-- [ ] Goal-based plan templates — strength, hypertrophy, endurance, with progression pre-configured
-- [ ] Progress photos — side-by-side comparison over time, stored locally like everything else
+- [x] Goal-based plan templates — strength, hypertrophy, endurance, with progression pre-configured
+- [x] Progress photos — side-by-side comparison over time, stored on-device only (IndexedDB — not part of the synced profile blob, so unlike the rest of your data these don't follow you to another device)
 
 ## Tech
 
@@ -205,7 +207,7 @@ React, the router and Zustand.
 ## Contributing
 
 Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Good first issues: more starter
-plans, exercise-data languages, import from other trackers. **A ⭐ helps more people find it.**
+plans, import from other trackers. **A ⭐ helps more people find it.**
 
 openGym is free and stays free: AGPL, no subscription, no paid tier, nothing held back for
 sponsors. If it replaced a paid tracker for you and you want to chip in, the Sponsor button at the

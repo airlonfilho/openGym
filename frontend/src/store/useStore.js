@@ -7,12 +7,14 @@ import { MOBILE, nativeLoad, nativeSave, syncReminder } from '../lib/mobile.js'
 
 const KEY = 'gym_state_v1'
 export const DEF = {
-  unit: 'kg', restSec: 90, sound: true, keepAwake: true, lang: 'en',
+  unit: 'kg', restSec: 90, sound: true, keepAwake: true, lang: 'pt',
   theme: 'dark', accent: 'lime', body: 'male', targetW: null,
   // weighInDay: 0-6 (Sunday-Saturday), or null = off. weighInSnoozed: the ISO week key
   // ("Don't show again this week" was tapped for), so the prompt skips that week only.
   weighInDay: null, weighInSnoozed: null,
-  bodyweight: [], routines: [], week: {}, dayPlan: {},
+  // measurements: { waist: [{d,v,t}], chest: [...], ... } — one array per metric, same
+  // shape as bodyweight (v instead of w). measureUnit is independent of the weight unit.
+  bodyweight: [], measurements: {}, measureUnit: 'cm', routines: [], week: {}, dayPlan: {},
   exWeights: {}, workouts: [], active: null, customEx: [], gifSize: 'full',
   // exNotes: free-text reminder per exercise ("elbows in", "use the pad") — persists across
   // sessions, unlike a workout log entry. barbellW: last bar weight used in the plate
@@ -22,7 +24,10 @@ export const DEF = {
   // that a profile which never chose (loaded state is overlaid on DEF, on every path: local,
   // server pull, backup import) still falls back to the `showRir` boolean this replaced and
   // keeps the column it had. See effortOf.
-  reminder: { on: false, time: '08:00', tz: null }, effort: null
+  reminder: { on: false, time: '08:00', tz: null }, effort: null,
+  // achievements: [{id, d}] earned badge ids with the date earned — a trophy case, never
+  // pruned. achievementsOn: opt-in, off by default (see Settings).
+  achievements: [], achievementsOn: false
 }
 const clone = o => JSON.parse(JSON.stringify(o))
 
