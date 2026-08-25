@@ -179,6 +179,7 @@ Rough, community-driven — ideas and PRs welcome:
 - [ ] Challenges between profiles — compare volume, streak, and frequency across profiles on the same instance
 - [x] Goal-based plan templates — strength, hypertrophy, endurance, with progression pre-configured
 - [x] Progress photos — side-by-side comparison over time, stored on-device only (IndexedDB — not part of the synced profile blob, so unlike the rest of your data these don't follow you to another device)
+- [x] Share card — after a workout, generate a sticker (transparent, for layering on your own photo) or a standalone card, both with an estimated calorie count. No Instagram API — it's a plain PNG through the Web Share sheet or a download
 
 ## Tech
 

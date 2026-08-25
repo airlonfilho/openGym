@@ -21,8 +21,9 @@ import { buildPlanBundle, parsePlan, mergePlan, printPlan } from './lib/plan-sha
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
 import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC, MAX_BW_SETS } from './lib/progression.js'
 import { BADGES, newlyEarned } from './lib/achievements.js'
-import { MOBILE, shareExport } from './lib/mobile.js'
+import { MOBILE, shareExport, shareImage } from './lib/mobile.js'
 import { listPhotos, getPhotoBlob, savePhoto, deletePhoto } from './lib/photos.js'
+import { renderShareCard, SHARE_VARIANTS } from './lib/sharecard.js'
 
 const S = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -1260,8 +1261,74 @@ function FinishSummary({ w, prs, e1prs = [], earned = [], close }) {
     <BodyMap load={loadOfWorkouts([w])} body={st.body} />
     <div style={{ height: 14 }} />
     <Button variant="primary" onClick={() => { close(); nav('/home') }}>{t('Nice!')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" icon="camera" onClick={() => shareCardSheet(w)}>{t('Share this workout')}</Button>
   </div>
 }
+
+// Two steps: pick a format, then preview it — the preview's own "Compartilhar" tap is what
+// actually calls the Web Share API. Calling it right after the async render (fonts load,
+// canvas draws) instead would arrive with no user gesture left to spend and Safari silently
+// refuses it, so the format pick can only ever kick off the render, never the share itself.
+function ShareCardSheet({ close, w }) {
+  const [variant, setVariant] = useState(null)
+  const [blob, setBlob] = useState(null)
+  const [url, setUrl] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const pick = async id => {
+    setVariant(id); setBusy(true); setBlob(null); setUrl(null)
+    try {
+      const b = await renderShareCard(id, w, S(), { background: id === 'overlay' ? 'transparent' : undefined })
+      setBlob(b); setUrl(URL.createObjectURL(b))
+    } catch (e) { toast(t('Could not create the image')); setVariant(null) }
+    setBusy(false)
+  }
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url) }, [url])
+
+  const send = async () => {
+    const filename = 'opengym-' + variant + '-' + w.d + '.png'
+    try {
+      const file = new File([blob], filename, { type: 'image/png' })
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] }); close(); return
+      }
+    } catch (e) { if (e.name === 'AbortError') return }
+    if (MOBILE) { await shareImage(blob, filename); close(); return }
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
+    close()
+  }
+
+  if (!variant) return <>
+    <h3>{t('Share this workout')}</h3>
+    <div className="sect-b">
+      {SHARE_VARIANTS.map(v => (
+        <button key={v.id} className="lrow tap" onClick={() => pick(v.id)}>
+          <span className="lrow-m"><span className="lrow-t">{t(v.name)}</span><span className="lrow-s">{t(v.desc)}</span></span>
+          <Icon name="chevronRight" className="lrow-c" />
+        </button>
+      ))}
+    </div>
+  </>
+
+  const cur = SHARE_VARIANTS.find(v => v.id === variant)
+  return <>
+    <h3>{t(cur.name)}</h3>
+    <div style={{
+      width: '100%', aspectRatio: '9/16', borderRadius: 14, marginBottom: 14, overflow: 'hidden',
+      background: variant === 'overlay'
+        ? 'repeating-conic-gradient(var(--surface-3) 0% 25%, var(--surface-2) 0% 50%) 0 0/28px 28px'
+        : 'var(--surface-2)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center'
+    }}>
+      {busy || !url ? <div className="dim small">{t('Generating…')}</div> : <img src={url} style={{ width: '100%', display: 'block' }} />}
+    </div>
+    <Button variant="primary" disabled={busy || !url} onClick={send}>{t('Share')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" className="dim" onClick={() => setVariant(null)}>{t('Choose another format')}</Button>
+  </>
+}
+export const shareCardSheet = w => ui().openSheet(close => <ShareCardSheet close={close} w={w} />)
 export function finishWorkout() {
   const A = S().active
   if (!A) return

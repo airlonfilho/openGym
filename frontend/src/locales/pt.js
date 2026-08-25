@@ -618,4 +618,18 @@ export default {
   'First PR': 'Primeiro recorde',
   '{0} PRs': '{0} recordes',
   '{0} clean sessions': '{0} sessões limpas',
+
+  // --- share card ---
+  'Share this workout': 'Compartilhar este treino',
+  'Sticker': 'Adesivo',
+  'Card': 'Cartão',
+  'Transparent — layer it over your own photo in Instagram': 'Transparente — sobreponha na sua própria foto no Instagram',
+  'Standalone, with its own background': 'Sozinho, com fundo próprio',
+  'Generating…': 'Gerando…',
+  'Could not create the image': 'Não foi possível criar a imagem',
+  'Share': 'Compartilhar',
+  'Choose another format': 'Escolher outro formato',
+  'Calories': 'Calorias',
+  'and': 'e',
+  'Today was a day of': 'Hoje foi dia de',
 }

@@ -66,3 +66,18 @@ export async function shareExport(json, filename) {
   const w = await Filesystem.writeFile({ path: filename, directory: Directory.Cache, data: json, encoding: Encoding.UTF8 })
   await Share.share({ title: filename, url: w.uri })
 }
+
+// Same idea for a binary file (the share-card PNG) — Filesystem writes base64, not a blob
+// directly, so this reads the blob through a data URL first.
+export async function shareImage(blob, filename) {
+  const { Filesystem, Directory } = await import('@capacitor/filesystem')
+  const { Share } = await import('@capacitor/share')
+  const base64 = await new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onloadend = () => resolve(r.result.split(',')[1])
+    r.onerror = reject
+    r.readAsDataURL(blob)
+  })
+  const w = await Filesystem.writeFile({ path: filename, directory: Directory.Cache, data: base64 })
+  await Share.share({ title: filename, url: w.uri })
+}
