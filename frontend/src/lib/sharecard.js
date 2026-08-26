@@ -279,14 +279,14 @@ function drawPoster(ctx, data) {
     ctx.fillText('kcal', col2 + kcalNumW + 16, sy + 92)
   }
 
-  // rule + "today was a day of <muscles>"
+  // rule + "day of <muscles>"
   if (data.muscleLine) {
     const ry = H - 320
     ctx.strokeStyle = 'rgba(255,255,255,.14)'; ctx.lineWidth = 3
     ctx.beginPath(); ctx.moveTo(padX, ry); ctx.lineTo(W - padX, ry); ctx.stroke()
     ctx.textAlign = 'left'
     ctx.font = '600 34px Inter'; ctx.fillStyle = ACC
-    ctx.fillText(t('Today was a day of'), padX, ry + 68)
+    ctx.fillText(t('Day of'), padX, ry + 68)
     ctx.font = '400 60px "Archivo Black"'; ctx.fillStyle = '#fff'
     let my = ry + 140
     wrapLines(ctx, data.muscleLine, W - padX * 2, 2).forEach(l => { ctx.fillText(l, padX, my); my += 68 })

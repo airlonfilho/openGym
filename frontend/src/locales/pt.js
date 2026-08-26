@@ -631,7 +631,7 @@ export default {
   'Choose another format': 'Escolher outro formato',
   'Calories': 'Calorias',
   'and': 'e',
-  'Today was a day of': 'Hoje foi dia de',
+  'Day of': 'Dia de',
 
   // --- leagues ---
   'Leagues': 'Ligas',
