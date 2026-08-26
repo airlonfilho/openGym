@@ -13,7 +13,10 @@ export default function TabBar({ onStart }) {
   const isGuest = useStore(s => s.isGuest())
   if (!user && !isGuest) return null
   const cur = loc.pathname.split('/')[1] || 'home'
-  const on = k => cur === k || (cur === 'history' && k === 'stats') || (cur === 'settings' && k === 'home')
+  const on = k => cur === k
+    || ((cur === 'history' || cur === 'stats') && k === 'stats')
+    || (cur === 'library' && k === 'plan')
+    || ((cur === 'settings' || cur === 'leagues' || cur === 'admin') && k === 'profile')
 
   const startWorkout = () => {
     if (!S.active) {
@@ -36,8 +39,8 @@ export default function TabBar({ onStart }) {
         <span className="cir"><Icon name={S.active ? 'play' : 'dumbbell'} /></span>
         <span>{S.active ? t('Resume') : t('Start')}</span>
       </button>
-      <Tab k="stats" icon="chart" to="/stats" label={t('Stats')} />
-      <Tab k="library" icon="list" to="/library" label={t('Exercises')} />
+      <Tab k="stats" icon="chart" to="/stats" label={t('Progress')} />
+      <Tab k="profile" icon="personCircle" to="/profile" label={t('Profile')} />
     </nav>
   )
 }

@@ -12,3 +12,5 @@ media/gif/
 data/secret
 data/vapid.json
 data/db.json
+data/groups.json
+data/state-*.json

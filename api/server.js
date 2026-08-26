@@ -52,6 +52,34 @@ function readState(uid) {
   try { return JSON.parse(fs.readFileSync(stateFile(uid), 'utf8')); } catch { return null; }
 }
 
+/* ---------- leagues (roadmap "Challenges between profiles") ----------
+   Small groups (<= 6) on one instance run a weekly, points-based competition. Each
+   member's client scores its own week and PUTs a compact "pulse"; the server only
+   stores and relays those — no training logic here, mirroring the frontend split.
+   Kept in its own file so a write never contends with db.json's user/cred writes. */
+const LEAGUE_MAX_MEMBERS = 6;
+const LEAGUE_MAX_PER_USER = 6;
+const PULSE_KEEP_WEEKS = 12;
+const groupsFile = path.join(DATA, 'groups.json');
+let groups = [];
+try { groups = JSON.parse(fs.readFileSync(groupsFile, 'utf8')).groups || []; } catch {}
+function saveGroups() { atomicWrite(groupsFile, JSON.stringify({ groups }, null, 2)); }
+const groupById = id => groups.find(g => g.id === id);
+const memberView = uid => { const u = db.users.find(x => x.id === uid); return { id: uid, name: u ? u.name : '—' }; };
+const clampGoal = n => Math.max(1, Math.min(14, Math.round(+n) || 3));
+const newLeagueCode = () => { let c; do { c = crypto.randomBytes(4).toString('hex').toUpperCase(); } while (groups.some(g => g.code === c)); return c; };
+// ISO week keys look like "2026-34" / "2026-3" — order by year then week number.
+const weekNum = wk => { const [y, w] = String(wk).split('-').map(Number); return (y || 0) * 100 + (w || 0); };
+// Drop pulses for people who left, and keep only the newest PULSE_KEEP_WEEKS per member.
+function pruneGroup(g) {
+  g.pulses = g.pulses || {};
+  for (const uid of Object.keys(g.pulses)) {
+    if (!g.members.includes(uid)) { delete g.pulses[uid]; continue; }
+    const wks = Object.keys(g.pulses[uid]).sort((a, b) => weekNum(a) - weekNum(b));
+    for (const wk of wks.slice(0, Math.max(0, wks.length - PULSE_KEEP_WEEKS))) delete g.pulses[uid][wk];
+  }
+}
+
 /* ---------- push notifications (Web Push / VAPID) ---------- */
 const vapidFile = path.join(DATA, 'vapid.json');
 let vapid;
@@ -59,6 +87,69 @@ try { vapid = JSON.parse(fs.readFileSync(vapidFile, 'utf8')); }
 catch { vapid = webpush.generateVAPIDKeys(); fs.writeFileSync(vapidFile, JSON.stringify(vapid), { mode: 0o600 }); }
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || (SECURE ? ORIGIN : 'mailto:admin@localhost');
 webpush.setVapidDetails(VAPID_SUBJECT, vapid.publicKey, vapid.privateKey);
+const RECAP_TIME = /^\d{2}:\d{2}$/.test(process.env.RECAP_TIME || '') ? process.env.RECAP_TIME : '19:00';
+
+/* ---------- push copy localization ----------
+   The server can't import the frontend i18n, and these are the only user-facing strings it
+   emits. English is the key; anything not in a table falls through untranslated. Keep in
+   step with frontend/src/locales when a push string changes. */
+const PUSH_STRINGS = {
+  pt: {
+    'Rest over 💪': 'Descanso acabou 💪',
+    'Time for your next set.': 'Hora da próxima série.',
+    '{0} today': '{0} hoje',
+    'Workout planned today': 'Treino planejado hoje',
+    "It's on your plan — let's go 💪": 'Está no seu plano — bora 💪',
+    'Test notification ✅ — this is what alerts look like.': 'Notificação de teste ✅ — é assim que os alertas aparecem.',
+    'Your week 🔥': 'Sua semana 🔥',
+    '{0} workouts · {1} kg · {2} PRs · streak at {3}': '{0} treinos · {1} kg · {2} PRs · sequência em {3}',
+    '{0} workout · {1} kg · {2} PRs · streak at {3}': '{0} treino · {1} kg · {2} PRs · sequência em {3}',
+  },
+};
+function pt(lang, s, ...args) {
+  let v = (PUSH_STRINGS[lang] && PUSH_STRINGS[lang][s]) || s;
+  args.forEach((a, i) => { v = v.split('{' + i + '}').join(a); });
+  return v;
+}
+const langOf = uid => { const S = readState(uid); return (S && S.lang) || 'en'; };
+
+/* ---------- date + weekly-recap helpers (duplicated from frontend lib/, tiny pure fns) ---------- */
+const isoOf = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function weekKey(d) {
+  const dt = new Date(d + 'T12:00:00');
+  const day = (dt.getDay() + 6) % 7;
+  dt.setDate(dt.getDate() - day + 3);
+  const jan4 = new Date(dt.getFullYear(), 0, 4);
+  const week = 1 + Math.round(((dt - jan4) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+  return dt.getFullYear() + '-' + week;
+}
+const volOf = w => (w.vol != null ? w.vol
+  : (w.entries || []).reduce((v, e) => v + (e.sets || []).reduce((s, x) => s + (x.done ? (x.w || 0) * (x.r || 0) : 0), 0), 0));
+function streakOf(S) {
+  const weeks = new Set((S.workouts || []).map(w => weekKey(w.d)));
+  if (!weeks.size) return 0;
+  let streak = 0;
+  const cur = new Date();
+  for (let i = 0; i < 520; i++) {
+    if (weeks.has(weekKey(isoOf(cur)))) streak++;
+    else if (i > 0) break;
+    cur.setDate(cur.getDate() - 7);
+  }
+  return streak;
+}
+// Numbers for the Sunday recap push — the current ISO week (Sunday belongs to it). null when
+// nothing was trained: no "0 workouts" nag.
+function serverRecap(S, todayIso) {
+  const wk = weekKey(todayIso);
+  const ws = (S.workouts || []).filter(w => weekKey(w.d) === wk);
+  if (!ws.length) return null;
+  return {
+    sessions: ws.length,
+    volume: Math.round(ws.reduce((v, w) => v + volOf(w), 0)),
+    prs: ws.reduce((n, w) => n + (w.prs ? w.prs.length : 0), 0),
+    streak: streakOf(S),
+  };
+}
 
 async function sendPush(userId, payload) {
   const subs = db.subs.filter(s => s.userId === userId);
@@ -90,7 +181,8 @@ function scheduleRestTimer(userId, sec) {
   if (t) clearTimeout(t);
   restTimers.set(userId, setTimeout(() => {
     restTimers.delete(userId);
-    sendPush(userId, { title: 'Rest over 💪', body: 'Time for your next set.', tag: 'rest-timer' });
+    const l = langOf(userId);
+    sendPush(userId, { title: pt(l, 'Rest over 💪'), body: pt(l, 'Time for your next set.'), tag: 'rest-timer' });
   }, sec * 1000));
 }
 function cancelRestTimer(userId) {
@@ -123,22 +215,49 @@ setInterval(() => {
   for (const user of db.users) {
     if (!db.subs.some(s => s.userId === user.id)) continue;
     const S = readState(user.id);
-    if (!S?.reminder?.on) continue;
-    const now = userNow(S.reminder.tz || 'UTC');
-    if (!now || S.reminder.time !== now.hhmm) continue;
-    if (user.lastReminder === now.date) continue;
-    if ((S.workouts || []).some(w => w.d === now.date)) continue;
-    const rid = effectiveRoutineId(S, now.date);
-    if (!rid) continue; // rest day — nothing planned
-    const routine = (S.routines || []).find(r => r.id === rid);
-    console.log('reminder firing', user.id, rid);
-    user.lastReminder = now.date;
-    saveDb();
-    sendPush(user.id, {
-      title: routine ? `${routine.emoji || '🏋️'} ${routine.name} today` : 'Workout planned today',
-      body: "It's on your plan — let's go 💪",
-      tag: 'day-reminder'
-    });
+    if (!S) continue;
+    // S.tz is stamped on every sync; reminder.tz is the older per-reminder copy — either works.
+    const tz = S.tz || S.reminder?.tz;
+    const now = tz ? userNow(tz) : null;
+    if (!now) continue;
+    const l = S.lang || 'en';
+
+    // "Workout planned today" — one per user per day, at their chosen time.
+    if (S.reminder?.on && S.reminder.time === now.hhmm && user.lastReminder !== now.date
+        && !(S.workouts || []).some(w => w.d === now.date)) {
+      const rid = effectiveRoutineId(S, now.date);
+      const routine = rid && (S.routines || []).find(r => r.id === rid);
+      if (rid) {
+        user.lastReminder = now.date;
+        saveDb();
+        sendPush(user.id, {
+          title: routine ? pt(l, '{0} today', `${routine.emoji || '🏋️'} ${routine.name}`) : pt(l, 'Workout planned today'),
+          body: pt(l, "It's on your plan — let's go 💪"),
+          tag: 'day-reminder',
+        });
+      }
+    }
+
+    // Weekly recap — Sunday at RECAP_TIME local, once per ISO week, only if push is on and
+    // there was training. Independent of the day-reminder toggle.
+    if (now.hhmm === RECAP_TIME && new Date(now.date + 'T12:00:00').getDay() === 0) {
+      const rwk = weekKey(now.date);
+      if (user.lastRecap !== rwk) {
+        const rc = serverRecap(S, now.date);
+        if (rc) {
+          user.lastRecap = rwk;
+          saveDb();
+          const key = rc.sessions === 1
+            ? '{0} workout · {1} kg · {2} PRs · streak at {3}'
+            : '{0} workouts · {1} kg · {2} PRs · streak at {3}';
+          sendPush(user.id, {
+            title: pt(l, 'Your week 🔥'),
+            body: pt(l, key, rc.sessions, rc.volume, rc.prs, rc.streak),
+            tag: 'weekly-recap',
+          });
+        }
+      }
+    }
   }
 // Checked every 10s (not 60s) — ticks aren't aligned to the top of the minute, so a 60s
 // interval could sit on your target minute for up to 59s before noticing. 10s caps that at ~9s.
@@ -417,7 +536,7 @@ const routes = {
   'POST /api/push/test': async (req, res) => {
     const user = readSession(req);
     if (!user) return json(res, 401, { error: 'not signed in' });
-    await sendPush(user.id, { title: 'openGym', body: 'Test notification ✅ — this is what alerts look like.', tag: 'test' });
+    await sendPush(user.id, { title: 'openGym', body: pt(langOf(user.id), 'Test notification ✅ — this is what alerts look like.'), tag: 'test' });
     json(res, 200, { ok: true });
   },
 
@@ -538,13 +657,151 @@ const routes = {
     db.invites = db.invites.filter(i => i.code !== inv.code);
     saveDb();
     json(res, 200, { ok: true });
+  },
+
+  /* ---------- leagues ---------- */
+  'GET /api/groups': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const mine = groups.filter(g => g.members.includes(user.id)).map(g => ({
+      id: g.id, name: g.name, owner: g.owner, weeklyGoal: g.weeklyGoal,
+      isOwner: g.owner === user.id,
+      code: g.owner === user.id ? g.code : undefined,   // only the owner needs the join code
+      members: g.members.map(memberView)
+    }));
+    json(res, 200, { groups: mine });
+  },
+
+  'POST /api/groups': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    if (groups.filter(g => g.members.includes(user.id)).length >= LEAGUE_MAX_PER_USER)
+      return json(res, 400, { error: 'you are in the maximum number of leagues' });
+    const body = await readBody(req);
+    const name = String(body.name || '').trim().slice(0, 40) || 'League';
+    const g = {
+      id: crypto.randomBytes(9).toString('base64url'),
+      name, owner: user.id, members: [user.id], code: newLeagueCode(),
+      weeklyGoal: clampGoal(body.weeklyGoal), created: new Date().toISOString(), pulses: {}
+    };
+    groups.push(g);
+    saveGroups();
+    json(res, 200, { id: g.id });
+  },
+
+  'POST /api/groups/join': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const code = String(body.code || '').trim().toUpperCase();
+    const g = groups.find(x => x.code === code);
+    if (!g) return json(res, 404, { error: 'no league with that code' });
+    if (!g.members.includes(user.id)) {
+      if (g.members.length >= LEAGUE_MAX_MEMBERS) return json(res, 400, { error: 'this league is full' });
+      if (groups.filter(x => x.members.includes(user.id)).length >= LEAGUE_MAX_PER_USER)
+        return json(res, 400, { error: 'you are in the maximum number of leagues' });
+      g.members.push(user.id);
+      saveGroups();
+    }
+    json(res, 200, { id: g.id });
   }
 };
+
+// /api/groups/<id> and /api/groups/<id>/<action> — the id segment means these can't sit
+// in the exact-match table above. Returns a handler or null (→ 404 in the dispatcher).
+function groupRoute(method, pathname) {
+  const m = pathname.match(/^\/api\/groups\/([^/]+)(?:\/([a-z]+))?$/);
+  if (!m) return null;
+  const id = decodeURIComponent(m[1]);
+  const action = m[2] || '';
+
+  // Resolve caller + group, members only; `needOwner` additionally requires ownership.
+  // Writes the error response and returns null on any failure.
+  const resolve = (req, res, needOwner) => {
+    const user = readSession(req);
+    if (!user) { json(res, 401, { error: 'not signed in' }); return null; }
+    const g = groupById(id);
+    if (!g || !g.members.includes(user.id)) { json(res, 404, { error: 'no such league' }); return null; }
+    if (needOwner && g.owner !== user.id) { json(res, 403, { error: 'only the league owner can do that' }); return null; }
+    return { user, g };
+  };
+
+  if (method === 'GET' && !action) return async (req, res) => {
+    const ctx = resolve(req, res); if (!ctx) return;
+    const { user, g } = ctx;
+    json(res, 200, {
+      group: {
+        id: g.id, name: g.name, owner: g.owner, weeklyGoal: g.weeklyGoal,
+        isOwner: g.owner === user.id, code: g.owner === user.id ? g.code : undefined,
+        members: g.members.map(memberView)
+      },
+      pulses: g.pulses || {}
+    });
+  };
+
+  if (method === 'PUT' && action === 'pulse') return async (req, res) => {
+    const ctx = resolve(req, res); if (!ctx) return;
+    const { user, g } = ctx;
+    const b = await readBody(req);
+    const wk = String(b.week || '');
+    if (!/^\d{4}-\d{1,2}$/.test(wk)) return json(res, 400, { error: 'bad week key' });
+    const int = (v, max) => Math.max(0, Math.min(max, Math.round(+v) || 0));
+    g.pulses = g.pulses || {};
+    g.pulses[user.id] = g.pulses[user.id] || {};
+    g.pulses[user.id][wk] = {
+      points: int(b.points, 100000), sessions: int(b.sessions, 100),
+      streak: int(b.streak, 1040), prs: int(b.prs, 200), volBeat: !!b.volBeat, ts: Date.now()
+    };
+    pruneGroup(g);
+    saveGroups();
+    json(res, 200, { ok: true });
+  };
+
+  if (method === 'POST' && action === 'leave') return async (req, res) => {
+    const ctx = resolve(req, res); if (!ctx) return;
+    const { user, g } = ctx;
+    g.members = g.members.filter(u => u !== user.id);
+    if (g.pulses) delete g.pulses[user.id];
+    if (!g.members.length) groups = groups.filter(x => x.id !== g.id);      // last one out closes it
+    else if (g.owner === user.id) g.owner = g.members[0];                   // hand ownership on
+    saveGroups();
+    json(res, 200, { ok: true });
+  };
+
+  if (method === 'POST' && action === 'rename') return async (req, res) => {
+    const ctx = resolve(req, res, true); if (!ctx) return;
+    const b = await readBody(req);
+    if (b.name != null) ctx.g.name = String(b.name).trim().slice(0, 40) || ctx.g.name;
+    if (b.weeklyGoal != null) ctx.g.weeklyGoal = clampGoal(b.weeklyGoal);
+    saveGroups();
+    json(res, 200, { ok: true });
+  };
+
+  if (method === 'POST' && action === 'kick') return async (req, res) => {
+    const ctx = resolve(req, res, true); if (!ctx) return;
+    const b = await readBody(req);
+    const target = String(b.uid || '');
+    if (target === ctx.user.id) return json(res, 400, { error: 'use leave to remove yourself' });
+    ctx.g.members = ctx.g.members.filter(u => u !== target);
+    if (ctx.g.pulses) delete ctx.g.pulses[target];
+    saveGroups();
+    json(res, 200, { ok: true });
+  };
+
+  if (method === 'POST' && action === 'code') return async (req, res) => {
+    const ctx = resolve(req, res, true); if (!ctx) return;
+    ctx.g.code = newLeagueCode();
+    saveGroups();
+    json(res, 200, { code: ctx.g.code });
+  };
+
+  return null;
+}
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const key = req.method + ' ' + url.pathname;
-  const handler = routes[key];
+  const handler = routes[key] || groupRoute(req.method, url.pathname);
   if (!handler) return json(res, 404, { error: 'not found' });
   try { await handler(req, res); }
   catch (e) {

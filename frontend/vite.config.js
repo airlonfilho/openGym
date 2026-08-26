@@ -8,6 +8,10 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   server: {
+    // Vite doesn't read $PORT on its own — honour it when set (tooling assigns one),
+    // otherwise keep the usual 5173 and let Vite hop to the next free port.
+    port: process.env.PORT ? Number(process.env.PORT) : 5173,
+    strictPort: !!process.env.PORT,
     proxy: {
       '/api': { target: backend, changeOrigin: true },
       '/img': { target: media, changeOrigin: true },

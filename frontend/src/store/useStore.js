@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { api } from '../lib/api.js'
+import { currentPulse } from '../lib/league.js'
 import { localTZ } from '../lib/format.js'
 import { registerCustom } from '../lib/exercises.js'
 import { DEMO, DEMO_SEEDED } from '../lib/demo.js'
@@ -25,9 +26,14 @@ export const DEF = {
   // server pull, backup import) still falls back to the `showRir` boolean this replaced and
   // keeps the column it had. See effortOf.
   reminder: { on: false, time: '08:00', tz: null }, effort: null,
+  // tz: the profile's IANA timezone, re-stamped on every load — the server fires the Sunday
+  // recap push and day reminders by this clock.
+  tz: null,
   // achievements: [{id, d}] earned badge ids with the date earned — a trophy case, never
-  // pruned. achievementsOn: opt-in, off by default (see Settings).
-  achievements: [], achievementsOn: false
+  // pruned. achievementsOn: opt-in, off by default (see Perfil).
+  achievements: [], achievementsOn: false,
+  // recapSeen: the ISO week key of the last weekly-recap card the user dismissed on Início.
+  recapSeen: null
 }
 const clone = o => JSON.parse(JSON.stringify(o))
 
@@ -85,6 +91,7 @@ export const useStore = create((set, get) => {
   // Everything a sign-out leaves behind on this device, whichever way it was triggered.
   const clearLocalSession = () => {
     get().setUser(null)
+    set({ leagues: [] })
     localStorage.removeItem('gym_guest')
     localStorage.removeItem('gym_dirty')
     localStorage.removeItem(KEY)
@@ -95,6 +102,25 @@ export const useStore = create((set, get) => {
     S: (() => { const s = loadState(); registerCustom(s.customEx); return s })(),
     user: (() => { try { return JSON.parse(localStorage.getItem('gym_user')) || null } catch { return null } })(),
     ready: false,
+    leagues: null,   // null = not loaded yet; [] = signed out or none joined
+
+    // Leagues are a signed-in-only, server-backed feature (like the admin dashboard and
+    // push): guest / mobile / demo builds have no backend to talk to and simply skip it.
+    async loadLeagues() {
+      if (!get().user) { set({ leagues: [] }); return [] }
+      try { const { groups } = await api('/api/groups'); set({ leagues: groups }); return groups }
+      catch (e) { if (get().leagues == null) set({ leagues: [] }); return get().leagues || [] }
+    },
+    // Publish this device's score for the current week to every league we're in. Called on
+    // boot and after each finished workout — fire-and-forget, never blocks the UI.
+    async syncLeagues() {
+      if (!get().user) return
+      const ls = get().leagues || await get().loadLeagues()
+      if (!ls || !ls.length) return
+      const S = get().S
+      await Promise.all(ls.map(g => api('/api/groups/' + encodeURIComponent(g.id) + '/pulse',
+        { method: 'PUT', body: JSON.stringify(currentPulse(S, g.weeklyGoal)) }).catch(() => {})))
+    },
 
     // Mutate a draft of S via producer fn, then persist + schedule sync.
     update(mut, push = true) {
@@ -188,12 +214,17 @@ export const useStore = create((set, get) => {
         const me = await api('/api/me')
         get().setUser(me.user)
         await get().pullState()
-        // Re-stamp the reminder's timezone on every load — keeps it correct if you're travelling,
-        // without needing to revisit Settings.
+        // Re-stamp the timezone on every load — keeps day reminders and the Sunday recap push
+        // firing by the user's own clock if they travel, without revisiting Settings.
         const tz = localTZ()
-        if (get().S.reminder?.on && get().S.reminder.tz !== tz) {
-          get().update(s => { s.reminder = { ...s.reminder, tz } })
+        if (get().S.tz !== tz || (get().S.reminder?.on && get().S.reminder.tz !== tz)) {
+          get().update(s => {
+            s.tz = tz
+            if (s.reminder?.on) s.reminder = { ...s.reminder, tz }
+          })
         }
+        // Non-blocking: load leagues, then push this week's score to each.
+        get().loadLeagues().then(() => get().syncLeagues()).catch(() => {})
       } catch (e) {
         if (e.status === 401) get().setUser(null)
       }

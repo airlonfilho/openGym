@@ -2,18 +2,18 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { EXIDX } from '../lib/exercises.js'
-import { lastBW, streakWeeks, setLabel, modeOf, effortOf } from '../lib/history.js'
+import { streakWeeks, setLabel, modeOf, effortOf, workoutVolume } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, weekKey } from '../lib/format.js'
 import { t, nameFor } from '../lib/i18n.js'
 import {
-  bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, bwDeltaColor, measureSheet, MEASURES, MEASURE_SLUG,
+  bwSheet, goalSheet, calendarSheet, workoutDetailSheet, WorkoutRow, measureSheet, MEASURES, MEASURE_SLUG,
   photoSheet, photoDetailSheet, PhotoImg
 } from '../sheets.jsx'
 import { listPhotos } from '../lib/photos.js'
-import { BADGES } from '../lib/achievements.js'
 import LineChart from '../components/LineChart.jsx'
 import Heatmap from '../components/Heatmap.jsx'
 import Icon from '../components/Icon.jsx'
+import BwProjection from '../components/BwProjection.jsx'
 import BodyMap, { BodyMapLegend } from '../components/BodyMap.jsx'
 import { loadOfWorkouts, rankOf, MUSCLE_NAME } from '../lib/muscles.js'
 import { e1rmSeries, best1RM } from '../lib/onerm.js'
@@ -134,29 +134,8 @@ function EffortCard({ S }) {
   </div>
 }
 
-// A trophy case, not a checklist — locked badges stay visible (dimmed) rather than
-// hidden, so there's always a next one in view.
-function Achievements({ S }) {
-  const have = new Set(S.achievements.map(a => a.id))
-  return <div className="card">
-    <h2>{t('Achievements')}</h2>
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(76px, 1fr))', gap: 12, marginTop: 4 }}>
-      {BADGES.map(b => {
-        const got = have.has(b.id)
-        return <div key={b.id} style={{ textAlign: 'center', opacity: got ? 1 : 0.4 }}>
-          <div style={{
-            width: 46, height: 46, borderRadius: '50%', margin: '0 auto 6px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: got ? 'var(--yellow)' : 'var(--surface-2)', color: got ? 'var(--bg)' : 'var(--label-2)'
-          }}><Icon name={b.icon} size={22} /></div>
-          <div className="small" style={{ lineHeight: 1.25 }}>{t(b.name, b.n)}</div>
-        </div>
-      })}
-    </div>
-  </div>
-}
-
-// Stats = the analytics hub: all charts, progress and history live here.
+// Progress = the analytics hub: strength curves, body, and history live here. The trophy
+// case moved to Perfil, alongside the streak and leagues it belongs with.
 export default function Stats() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
@@ -165,6 +144,7 @@ export default function Stats() {
   const [exMetric, setExMetric] = useState('top')
   const [measId, setMeasId] = useState(null)
   const [measRange, setMeasRange] = useState(90)
+  const [hmWeeks, setHmWeeks] = useState(52)
   const [photos, setPhotos] = useState([])
   const reloadPhotos = () => listPhotos().then(setPhotos)
   useEffect(() => { reloadPhotos() }, [])
@@ -175,10 +155,11 @@ export default function Stats() {
 
   const bwPts = S.bodyweight.filter(b => range === 0 || (b.t || new Date(b.d).getTime()) > now - range * 86400000)
     .map(b => ({ t: b.t || new Date(b.d).getTime(), y: b.w, d: b.d }))
-  const bw30 = S.bodyweight.filter(b => (b.t || new Date(b.d).getTime()) > now - 30 * 86400000)
-  const bwDelta30 = bw30.length > 1 ? bw30[bw30.length - 1].w - bw30[0].w : null
   // Days trained this month, not sessions — see Home.jsx for why.
   const monthW = new Set(S.workouts.filter(w => w.d.slice(0, 7) === todayISO().slice(0, 7)).map(w => w.d)).size
+  // Load lifted this ISO week — the training-side number the other tiles don't show.
+  const vol7 = S.workouts.filter(w => weekKey(w.d) === weekKey(todayISO()))
+    .reduce((v, w) => v + (w.vol != null ? w.vol : workoutVolume(w)), 0)
 
   const exHist = [...new Set(S.workouts.flatMap(w => w.entries.map(e => e.id)))].filter(id => EXIDX[id]).sort((a, b) => EXIDX[a].n < EXIDX[b].n ? -1 : 1)
   const curEx = exId && exHist.includes(exId) ? exId : exHist[0] || null
@@ -237,25 +218,26 @@ export default function Stats() {
   const slugToMeas = Object.fromEntries(MEASURES.map(m => [MEASURE_SLUG[m.id], m.id]))
 
   return <>
-    <div className="hdr"><div><h1>{t('Stats')}</h1><div className="sub">{t('Progress & history')}</div></div>
+    <div className="hdr"><div><h1>{t('Progress')}</h1><div className="sub">{t('Your progress & history')}</div></div>
       <button className="iconbtn" onClick={() => nav('/history')} aria-label={t('History')}><Icon name="history" /></button></div>
 
     <div className="tiles">
       <div className="tile"><div className="l"><Icon name="dumbbell" />{t('Workouts')}</div><div className="v">{S.workouts.length}</div></div>
       <div className="tile"><div className="l"><Icon name="calendar" />{t('This month')}</div><div className="v">{monthW}</div></div>
       <div className="tile"><div className="l"><Icon name="flame" />{t('Week streak')}</div><div className="v">{streakWeeks(S)}</div></div>
-      <div className="tile"><div className="l"><Icon name="scale" />{t('Weight 30d')}</div><div className="v" style={{ fontSize: 22, color: bwDelta30 === null ? 'inherit' : bwDeltaColor(bwDelta30, (lastBW(S) || {}).w || 0) }}>{bwDelta30 === null ? '—' : (bwDelta30 > 0 ? '+' : '') + fmtNum(bwDelta30) + ' ' + S.unit}</div></div>
+      <div className="tile"><div className="l"><Icon name="barbell" />{t('Volume 7d')}</div><div className="v" style={{ fontSize: 20 }}>{vol7 ? fmtNum(Math.round(vol7)) : '—'}{vol7 ? <span style={{ fontSize: 12, color: 'var(--label-2)', marginLeft: 3 }}>{S.unit}</span> : null}</div></div>
     </div>
 
     <div className="card">
-      <h2>{t('Activity — last 12 months')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('by time trained')}</span></h2>
-      <Heatmap S={S} onDay={iso => { const ws = S.workouts.filter(w => w.d === iso); if (ws.length === 1) workoutDetailSheet(ws[0]); else if (ws.length) calendarSheet(iso) }} />
+      <h2>{t('Activity')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('by time trained')}</span></h2>
+      <Segmented className="seg-range" value={hmWeeks} onChange={setHmWeeks}
+        options={[{ value: 6, label: '1M' }, { value: 13, label: '3M' }, { value: 26, label: '6M' }, { value: 52, label: '1Y' }]} />
+      <Heatmap S={S} weeks={hmWeeks} onDay={iso => { const ws = S.workouts.filter(w => w.d === iso); if (ws.length === 1) workoutDetailSheet(ws[0]); else if (ws.length) calendarSheet(iso) }} />
     </div>
 
     {S.workouts.length > 0 && <MuscleBalance S={S} />}
-    {anyEffort && <EffortCard S={S} />}
-    {S.achievementsOn && <Achievements S={S} />}
 
+    <h4 className="sec">{t('Body')}</h4>
     <div className="cols">
       <div className="card">
         <div className="row between" style={{ marginBottom: 8 }}>
@@ -268,34 +250,7 @@ export default function Stats() {
         <Segmented className="seg-range" value={range} onChange={setRange}
           options={[{ value: 30, label: '1M' }, { value: 90, label: '3M' }, { value: 365, label: '1Y' }, { value: 0, label: t('All') }]} />
         <div className="chart"><LineChart points={bwPts} h={160} unit={S.unit} goal={S.targetW} /></div>
-      </div>
-
-      <div className="card">
-        <h2>{t('Exercise progress')}</h2>
-        {exHist.length ? <>
-          <div className="sect-b" style={{ marginBottom: 10 }}>
-            <SelectRow title={t('Exercise')} sheetTitle={t('Exercise progress')} value={curEx} onChange={setExId}
-              options={exHist.map(id => ({ value: id, label: nameFor(EXIDX[id]) }))} />
-          </div>
-          {exOpts.length > 1 && <Segmented className="seg-range" value={onEff ? 'effort' : onE1 ? 'e1rm' : 'top'} onChange={setExMetric} options={exOpts} />}
-          <div className="chart">
-            {onEff
-              ? <LineChart points={effPts} h={150} unit={hd} color="var(--yellow)" invert={kind === 'rir'} />
-              : <LineChart points={onE1 ? e1Pts.map(p => ({ t: p.t, y: p.y, d: p.d })) : topPts} h={150} unit={exUnit} color="var(--blue)" />}
-          </div>
-          <div style={{ marginTop: 8 }}>{exList.map((p, i) => <div key={i} className="row between small" style={{ padding: '6px 0', borderBottom: 'var(--hair) solid var(--sep)' }}>
-            <span className="muted">{fmtDate(p.d, true)}</span><span>{p.sets.map(s => setLabel(curEx, s, p.target)).join('  ')}</span></div>)}</div>
-          <div className="small dim" style={{ marginTop: 8 }}>
-            {onEff ? t('Average effort per workout') : onE1 ? t('Estimated 1RM per workout') : curCardio ? t('Top speed per workout') : curTimed ? t('Longest hold per workout') : t('Best set weight per workout')}
-            {onEff ? '' : <> · {t('Best:')}{' '}<b className="accent">{fmtNum(onE1 ? e1Best.est : exBest)} {onE1 ? S.unit : exUnit}</b></>}
-          </div>
-          {onE1 && <div className="small dim" style={{ marginTop: 4 }}>
-            {t('Best estimate from {0} on {1} — an estimate, not a tested max.', fmtNum(e1Best.w) + ' ' + S.unit + ' × ' + e1Best.r, fmtDate(e1Best.d, true))}
-          </div>}
-          {!onEff && !onE1 && showEff && <div className="small dim" style={{ marginTop: 4 }}>
-            {t('A fuller dot means less left in the tank — the same weight at a lower {0} is progress the line alone does not show.', hd)}
-          </div>}
-        </> : <div className="muted small">{t('Finish your first workout to see progress curves here.')}</div>}
+        <BwProjection S={S} />
       </div>
 
       <div className="card">
@@ -331,6 +286,36 @@ export default function Stats() {
         </div>
       ) : <div className="muted small">{t('No photos yet — add one to start tracking visually.')}</div>}
     </div>
+
+    <div className="card">
+      <h2>{t('Exercise progress')}</h2>
+      {exHist.length ? <>
+          <div className="sect-b" style={{ marginBottom: 10 }}>
+            <SelectRow title={t('Exercise')} sheetTitle={t('Exercise progress')} value={curEx} onChange={setExId}
+              options={exHist.map(id => ({ value: id, label: nameFor(EXIDX[id]) }))} />
+          </div>
+          {exOpts.length > 1 && <Segmented className="seg-range" value={onEff ? 'effort' : onE1 ? 'e1rm' : 'top'} onChange={setExMetric} options={exOpts} />}
+          <div className="chart">
+            {onEff
+              ? <LineChart points={effPts} h={150} unit={hd} color="var(--yellow)" invert={kind === 'rir'} />
+              : <LineChart points={onE1 ? e1Pts.map(p => ({ t: p.t, y: p.y, d: p.d })) : topPts} h={150} unit={exUnit} color="var(--blue)" />}
+          </div>
+          <div style={{ marginTop: 8 }}>{exList.map((p, i) => <div key={i} className="row between small" style={{ padding: '6px 0', borderBottom: 'var(--hair) solid var(--sep)' }}>
+            <span className="muted">{fmtDate(p.d, true)}</span><span>{p.sets.map(s => setLabel(curEx, s, p.target)).join('  ')}</span></div>)}</div>
+          <div className="small dim" style={{ marginTop: 8 }}>
+            {onEff ? t('Average effort per workout') : onE1 ? t('Estimated 1RM per workout') : curCardio ? t('Top speed per workout') : curTimed ? t('Longest hold per workout') : t('Best set weight per workout')}
+            {onEff ? '' : <> · {t('Best:')}{' '}<b className="accent">{fmtNum(onE1 ? e1Best.est : exBest)} {onE1 ? S.unit : exUnit}</b></>}
+          </div>
+          {onE1 && <div className="small dim" style={{ marginTop: 4 }}>
+            {t('Best estimate from {0} on {1} — an estimate, not a tested max.', fmtNum(e1Best.w) + ' ' + S.unit + ' × ' + e1Best.r, fmtDate(e1Best.d, true))}
+          </div>}
+          {!onEff && !onE1 && showEff && <div className="small dim" style={{ marginTop: 4 }}>
+            {t('A fuller dot means less left in the tank — the same weight at a lower {0} is progress the line alone does not show.', hd)}
+          </div>}
+        </> : <div className="muted small">{t('Finish your first workout to see progress curves here.')}</div>}
+    </div>
+
+    {anyEffort && <EffortCard S={S} />}
 
     {S.workouts.length > 0 && <>
       <div className="row between" style={{ marginBottom: 10 }}>

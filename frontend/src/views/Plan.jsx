@@ -1,16 +1,18 @@
+import { useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { DAYN, uid, exCount } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
-import { dayAssignSheet, starterPlanSheet, planToolsSheet } from '../sheets.jsx'
+import { dayAssignSheet, starterPlanSheet, planToolsSheet, importFromApp } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
-import { Button } from '../components/ui.jsx'
+import { Button, Row } from '../components/ui.jsx'
 import { glyphOf, DEFAULT_GLYPH } from '../lib/glyphs.js'
 
 export default function Plan() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
   const update = useStore(s => s.update)
+  const importRef = useRef(null)
 
   const addRoutine = () => {
     const r = { id: uid(), name: t('New routine'), emoji: DEFAULT_GLYPH, ex: [] }
@@ -21,7 +23,10 @@ export default function Plan() {
   return <>
     <div className="hdr">
       <div><h1>{t('Plan')}</h1><div className="sub">{t('Your weekly routine')}</div></div>
-      <button className="iconbtn" onClick={planToolsSheet} aria-label={t('Share your plan')} title={t('Share your plan')}><Icon name="upload" /></button>
+      <div className="row" style={{ gap: 2 }}>
+        <button className="iconbtn" onClick={() => nav('/library')} aria-label={t('Exercises')} title={t('Exercises')}><Icon name="list" /></button>
+        <button className="iconbtn" onClick={planToolsSheet} aria-label={t('Share your plan')} title={t('Share your plan')}><Icon name="upload" /></button>
+      </div>
     </div>
     <div className="cols"><div>
       <h4 className="sec">{t('Week schedule')}</h4>
@@ -44,8 +49,20 @@ export default function Plan() {
         <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
         <Icon name="chevronRight" className="chev" /></div>)}</div> : <>
         <div className="empty"><div className="ico"><Icon name="clipboard" /></div>{t('No routines yet.')}<br />{t('Create one or load the starter plan.')}</div>
-        <Button icon="sparkles" onClick={starterPlanSheet}>{t('Load starter plan')}</Button>
       </>}
     </div></div>
+
+    {/* Bring a plan in — the fast ways to fill an empty week, and the door to the exercise library. */}
+    <h4 className="sec">{t('Add a plan')}</h4>
+    <div className="sect-b" style={{ marginBottom: 22 }}>
+      <Row icon="sparkles" iconTint="var(--acc)" title={t('Load starter plan')} accessory="chevron" onClick={starterPlanSheet} />
+      <Row icon="shuffle" iconTint="var(--teal)" title={t('Import from another app')}
+        subtitle={t('FitNotes, Strong, Hevy — or body weight from Apple Health')}
+        accessory="chevron" onClick={() => importRef.current.click()} />
+      <Row icon="list" iconTint="var(--indigo)" title={t('Browse exercises')} accessory="chevron" onClick={() => nav('/library')} />
+    </div>
+    {/* Reset after reading so picking the same file twice still fires onChange. */}
+    <input ref={importRef} type="file" accept=".csv,.xml,text/csv,text/xml" style={{ display: 'none' }}
+      onChange={ev => { const f = ev.target.files[0]; if (f) importFromApp(f); ev.target.value = '' }} />
   </>
 }

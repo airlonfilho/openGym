@@ -176,10 +176,14 @@ Rough, community-driven — ideas and PRs welcome:
 - [x] Exercise instructions in Portuguese (pt-BR, translated separately since the upstream dataset doesn't ship it)
 - [x] Scope cut to English + Portuguese (BR) only, Portuguese as the default — dropped the other 10 UI languages rather than chase upstream exercise-instruction coverage for each
 - [x] Streaks & achievements — badges for weekly streaks, PRs, and completing a progression cycle without a missed session, opt-in
-- [ ] Challenges between profiles — compare volume, streak, and frequency across profiles on the same instance
+- [x] Leagues — a small group (up to 6 profiles on the same instance) runs a weekly points competition with a rolling season table. Scored on consistency and progress against your *own* past numbers — showing up, hitting a shared session goal, keeping a streak, personal PRs — never on how much you lift, so a stronger lifter and a lighter one race on even terms. Opt-in; only your group-mates see your weekly summary
 - [x] Goal-based plan templates — strength, hypertrophy, endurance, with progression pre-configured
 - [x] Progress photos — side-by-side comparison over time, stored on-device only (IndexedDB — not part of the synced profile blob, so unlike the rest of your data these don't follow you to another device)
 - [x] Share card — after a workout, generate a sticker (transparent, for layering on your own photo) or a standalone card, both with an estimated calorie count. No Instagram API — it's a plain PNG through the Web Share sheet or a download
+- [x] Weekly recap — a Friday–Monday card on Home summing the week (sessions, volume, PRs, streak, top lift, vs. last week), with its own share image; also a Sunday-night push
+- [x] Body-weight goal projection — a least-squares trend over recent weigh-ins → the date it would cross your target, on Home and in Progress
+- [x] Portuguese push notifications — rest-timer, day reminder, weekly recap all localized to the profile's language
+- [x] Navigation reworked — a **Profile** hub (leagues, achievements, records, account, notifications, your data) in place of a crowded Settings; **Progress** replaces Stats with strength up top and a body section; the exercise library moves off the tab bar
 
 ## Tech
 

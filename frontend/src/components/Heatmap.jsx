@@ -2,10 +2,11 @@ import { useEffect, useRef } from 'react'
 import { fmtVol, isoOf, todayISO, MONTHS } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 
-// GitHub-style activity heatmap, shaded by time trained per day.
-export default function Heatmap({ S, onDay }) {
+// GitHub-style activity heatmap, shaded by time trained per day. `weeks` is how many
+// week-columns to draw back from this week (default a full year).
+export default function Heatmap({ S, onDay, weeks = 52 }) {
   const wrapRef = useRef(null)
-  useEffect(() => { if (wrapRef.current) wrapRef.current.scrollLeft = wrapRef.current.scrollWidth }, [])
+  useEffect(() => { if (wrapRef.current) wrapRef.current.scrollLeft = wrapRef.current.scrollWidth }, [weeks])
 
   const agg = {}
   S.workouts.forEach(w => {
@@ -20,14 +21,14 @@ export default function Heatmap({ S, onDay }) {
 
   const today = new Date(); today.setHours(12, 0, 0, 0)
   const end = new Date(today); end.setDate(today.getDate() - ((today.getDay() + 6) % 7))
-  const start = new Date(end); start.setDate(end.getDate() - 52 * 7)
+  const start = new Date(end); start.setDate(end.getDate() - weeks * 7)
 
   const months = [], cols = []
   let lastMonth = -1
-  for (let wk = 0; wk <= 52; wk++) {
+  for (let wk = 0; wk <= weeks; wk++) {
     const colStart = new Date(start); colStart.setDate(start.getDate() + wk * 7)
     const mo = colStart.getMonth()
-    const showM = mo !== lastMonth && colStart.getDate() <= 7 && wk < 51
+    const showM = mo !== lastMonth && colStart.getDate() <= 7 && wk < weeks - 1
     months.push(<span key={wk}>{showM ? t(MONTHS[mo]) : ''}</span>)
     if (colStart.getDate() <= 7) lastMonth = mo
     const cells = []

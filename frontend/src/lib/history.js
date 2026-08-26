@@ -248,3 +248,16 @@ export function streakWeeks(S) {
   }
   return streak
 }
+
+// Was each of the last `n` ISO weeks trained? Oldest first, current week last — the strip
+// under the streak cards on Início and Perfil.
+export function weekActivity(S, n) {
+  const trained = new Set((S.workouts || []).map(w => weekKey(w.d)))
+  const out = []
+  const cur = new Date()
+  for (let i = 0; i < n; i++) {
+    out.unshift(trained.has(weekKey(isoOf(cur))))
+    cur.setDate(cur.getDate() - 7)
+  }
+  return out
+}

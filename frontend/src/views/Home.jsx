@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
-import { effectiveRoutine, effectiveRoutineId, streakWeeks, lastBW, setsDoneActive } from '../lib/history.js'
+import { effectiveRoutine, effectiveRoutineId, streakWeeks, weekActivity, lastBW, setsDoneActive } from '../lib/history.js'
 import { fmtNum, fmtDate, todayISO, isoOf, weekKey, DAYS } from '../lib/format.js'
 import { t, dateLocale } from '../lib/i18n.js'
 import { bwSheet, goalSheet, dayOverrideSheet, calendarSheet, startFlow, starterPlanSheet, bwDeltaColor } from '../sheets.jsx'
 import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
+import BwProjection from '../components/BwProjection.jsx'
+import RecapCard from '../components/RecapCard.jsx'
 import { Button } from '../components/ui.jsx'
 import { glyphOf } from '../lib/glyphs.js'
 
@@ -88,6 +90,38 @@ export default function Home() {
       </div>
     )}
 
+    <RecapCard />
+
+    <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => calendarSheet()}>
+      <div className="row between">
+        <div className="row" style={{ gap: 12, minWidth: 0 }}>
+          <div style={{
+            width: 46, height: 46, borderRadius: 13, flexShrink: 0,
+            background: 'color-mix(in srgb, var(--orange) 18%, transparent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}><Icon name="flame" style={{ color: 'var(--orange)', fontSize: 22 }} /></div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 23, fontWeight: 700, letterSpacing: '-.03em', lineHeight: 1.05 }}>
+              {streakWeeks(S)} <span className="muted" style={{ fontSize: 14, fontWeight: 500 }}>{t('weeks streak')}</span>
+            </div>
+            <div className="muted small" style={{ marginTop: 2 }}>
+              {t('{0} this week', wThisWeek + (plannedPerWeek ? '/' + plannedPerWeek : ''))} · {t(S.workouts.length === 1 ? '{0} workout total' : '{0} workouts total', S.workouts.length)}
+            </div>
+          </div>
+        </div>
+        <Icon name="calendar" className="chev" style={{ fontSize: 19, flexShrink: 0 }} />
+      </div>
+      <div className="row" style={{ gap: 5, marginTop: 12 }}>
+        {weekActivity(S, 8).map((on, i) => (
+          <div key={i} style={{
+            flex: 1, height: 20, borderRadius: 5,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: on ? 'color-mix(in srgb, var(--orange) 26%, transparent)' : 'var(--surface-2)',
+          }}>{on && <Icon name="flame" size={10} style={{ color: 'var(--orange)' }} />}</div>
+        ))}
+      </div>
+    </div>
+
     <div className="card">
       <div className="row between" style={{ marginBottom: 6 }}>
         <h2 style={{ margin: 0 }}>{t('Body weight')}</h2>
@@ -114,21 +148,9 @@ export default function Home() {
             <span>{t('Goal')} {fmtNum(S.targetW)} {S.unit} · {Math.abs(S.targetW - bw.w) < 0.05 ? t('reached!') : t(S.targetW > bw.w ? '{0} to gain' : '{0} to lose', fmtNum(Math.abs(S.targetW - bw.w)) + ' ' + S.unit)}</span>
           </div>
         )}
+        <BwProjection S={S} />
         <div className="chart" style={{ marginTop: 8 }}><LineChart points={bwPoints} h={130} unit={S.unit} goal={S.targetW} /></div>
       </> : <div className="muted small">{t('No entries yet — log your weight to start the curve. You can pick a past date too.')}</div>}
-    </div>
-
-    <div className="card tappable" style={{ cursor: 'pointer' }} onClick={() => calendarSheet()}>
-      <div className="row between">
-        <div>
-          <div className="row" style={{ gap: 7, fontSize: 22, fontWeight: 600, letterSpacing: '-.021em' }}>
-            <Icon name="flame" style={{ color: 'var(--orange)' }} />
-            {t('{0} week streak', streakWeeks(S))}
-          </div>
-          <div className="muted small" style={{ marginTop: 2 }}>{wThisWeek}{plannedPerWeek ? ' / ' + plannedPerWeek : ''} {t('this week')} · {t(S.workouts.length === 1 ? '{0} workout total' : '{0} workouts total', S.workouts.length)}</div>
-        </div>
-        <Icon name="calendar" className="chev" style={{ fontSize: 20 }} />
-      </div>
     </div>
   </div>
 }
