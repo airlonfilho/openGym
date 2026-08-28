@@ -664,6 +664,7 @@ h4.sec{
   width:min(84vw,300px);background:var(--bg-el);border-radius:var(--r-lg);padding:20px;
   box-shadow:0 20px 60px -12px rgba(0,0,0,.5);
   animation:pop .28s var(--ease);
+  max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
 }
 :root[data-theme="light"] .center{background:#fff}
 @keyframes pop{from{transform:translate(-50%,-50%) scale(.94);opacity:0}to{transform:translate(-50%,-50%) scale(1);opacity:1}}
