@@ -1,16 +1,17 @@
-// Share card — a canvas-drawn workout summary sized for Instagram Stories (1080×1920), for
-// the "Compartilhar" action after finishing a workout. No official Instagram API: this just
-// produces a PNG the user shares or downloads like any other file (see lib/mobile.js).
+// Share card — a canvas-drawn workout image sized for Instagram Stories (1080×1920), for the
+// "Compartilhar" action after a workout and from any past workout in history. No official
+// Instagram API: this just produces a PNG the user shares or downloads (see lib/mobile.js).
 //
-// Two distinct layouts, both drawing from the same data (computed once in buildCardData()):
-//   overlay — compact, duration/calories in the top corners and date/title/muscle
-//             pills/signature stacked up from the bottom. Exported transparent — meant to
-//             sit over a photo the user picks in Instagram's own editor.
-//   poster  — a standalone card with its own dark background: logo/date pill up top, a big
-//             title, a duration/calories row, then a "today was a day of <muscles>" line.
-import { fmtDate } from './format.js'
+// Two designs, each in a transparent "sticker" and an opaque "card" finish — all four drawing
+// from the same data (computed once in buildCardData()):
+//   summary — duration/calories in the top corners, then date / routine name / muscle pills
+//             stacked up from the bottom (overlay = transparent, poster = own background).
+//   stats   — duration / calories / week progress / sets·reps stacked big under the wordmark
+//             and date, Freeletics-style, closing on the workout title
+//             (stats = transparent, stats-card = own background).
+import { fmtDate, weekKey } from './format.js'
 import { t } from './i18n.js'
-import { lastBW, effortOf } from './history.js'
+import { lastBW, effortOf, setsDone } from './history.js'
 import { loadOfWorkouts, rankOf, MUSCLE_NAME } from './muscles.js'
 import { avgRir } from './effort.js'
 
@@ -19,8 +20,10 @@ const ACC = '#CFFF04'
 const FONT_BASE = 'fonts/'
 
 export const SHARE_VARIANTS = [
-  { id: 'overlay', name: 'Sticker', desc: 'Transparent — layer it over your own photo in Instagram' },
-  { id: 'poster', name: 'Card', desc: 'Standalone, with its own background' },
+  { id: 'stats', kind: 'Stats', name: 'Sticker', desc: 'Transparent — layer it over your own photo in Instagram' },
+  { id: 'stats-card', kind: 'Stats', name: 'Card', desc: 'Standalone, with its own background' },
+  { id: 'overlay', kind: 'Summary', name: 'Sticker', desc: 'Transparent — layer it over your own photo in Instagram' },
+  { id: 'poster', kind: 'Summary', name: 'Card', desc: 'Standalone, with its own background' },
 ]
 
 let fontsReady = null
@@ -69,22 +72,37 @@ function joinMuscles(names) {
   return joined.charAt(0).toUpperCase() + joined.slice(1)
 }
 
+// Total reps across every checked-off set — the summary layouts never needed it.
+function repsOf(w) {
+  let n = 0
+  ;(w.entries || []).forEach(e => (e.sets || []).forEach(s => { if (s.done) n += s.r || 0 }))
+  return n
+}
+
 function buildCardData(w, S) {
   const load = loadOfWorkouts([w])
   const worked = rankOf(load).worked.slice(0, 3).map(slug => t(MUSCLE_NAME[slug]))
+  // "3/6" — sessions logged in this workout's own week over the training days the weekly plan
+  // has (so it reads right even when sharing an old workout). No plan set → just the count.
+  const wk = weekKey(w.d)
+  const weekDone = ((S && S.workouts) || []).filter(x => weekKey(x.d) === wk).length || 1
+  const weekPlanned = Object.values((S && S.week) || {}).filter(Boolean).length
   return {
     routine: w.name || t('Freestyle'),
     date: fmtDate(w.d, true),
     duration: compactDur(w.end - w.start),
+    week: weekPlanned > 0 ? `${weekDone}/${weekPlanned}` : String(weekDone),
+    sets: setsDone(w),
+    reps: repsOf(w),
     kcal: estimateCalories(w, S),
     muscleTags: worked,
     muscleLine: worked.length ? joinMuscles(worked) : null,
   }
 }
 
-// Dumbbell mark — the exact path data from components/Icon.jsx's `dumbbell` glyph, stroked
-// the same way (fill:none, round caps/joins), just scaled up for canvas instead of 24×24 CSS.
-function drawMark(ctx, x, y, size, color) {
+// The exact path data from components/Icon.jsx's glyphs, stroked the same way (fill:none,
+// round caps/joins), just scaled up for canvas instead of 24×24 CSS.
+function drawGlyph(ctx, kind, x, y, size, color) {
   ctx.save()
   ctx.translate(x, y)
   ctx.scale(size / 24, size / 24)
@@ -92,12 +110,29 @@ function drawMark(ctx, x, y, size, color) {
   ctx.lineWidth = 1.9
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  const r1 = new Path2D(); r1.roundRect(5.9, 7.9, 3.2, 8.2, 1.3)
-  const r2 = new Path2D(); r2.roundRect(14.9, 7.9, 3.2, 8.2, 1.3)
-  ctx.stroke(r1); ctx.stroke(r2)
-  ctx.stroke(new Path2D('M9.1 12h5.8M3.6 9.9v4.2M20.4 9.9v4.2'))
+  if (kind === 'dumbbell') {
+    const r1 = new Path2D(); r1.roundRect(5.9, 7.9, 3.2, 8.2, 1.3)
+    const r2 = new Path2D(); r2.roundRect(14.9, 7.9, 3.2, 8.2, 1.3)
+    ctx.stroke(r1); ctx.stroke(r2)
+    ctx.stroke(new Path2D('M9.1 12h5.8M3.6 9.9v4.2M20.4 9.9v4.2'))
+  } else if (kind === 'timer') {
+    ctx.beginPath(); ctx.arc(12, 13.4, 7.2, 0, 7); ctx.stroke()
+    ctx.stroke(new Path2D('M12 9.6v3.8h2.8M9.6 3.4h4.8'))
+  } else if (kind === 'flame') {
+    ctx.stroke(new Path2D('M12 20.4c3.2 0 5.4-2.1 5.4-5.1 0-3.9-3.4-5.6-2.6-9.8-2.5.8-4 2.9-4 5.1 0 1-.5 1.6-1.2 1.6-.8 0-1.2-.7-1.2-1.8-1.1 1.2-1.8 2.9-1.8 4.9 0 3 2.2 5.1 5.4 5.1Z'))
+  } else if (kind === 'calendar') {
+    const r = new Path2D(); r.roundRect(3.4, 5.2, 17.2, 15.4, 3.2)
+    ctx.stroke(r)
+    ctx.stroke(new Path2D('M8.2 3.4v3.4M15.8 3.4v3.4M3.4 10.2h17.2'))
+  } else if (kind === 'figure') {
+    ctx.beginPath(); ctx.arc(12, 5.2, 2, 0, 7); ctx.stroke()
+    ctx.stroke(new Path2D('M12 8.4v5.6M12 14 9.2 20.5M12 14l2.8 6.5M8 10.6h8M5.4 9.1v3M18.6 9.1v3'))
+  }
   ctx.restore()
 }
+
+// Dumbbell mark — kept as its own name for the many callers that predate the other glyphs.
+function drawMark(ctx, x, y, size, color) { drawGlyph(ctx, 'dumbbell', x, y, size, color) }
 
 // Shrinks the overlay's title font until `text` fits on one line under maxWidth — a long
 // routine name gets smaller rather than wrapping and breaking that layout's fixed spacing.
@@ -293,6 +328,99 @@ function drawPoster(ctx, data) {
   }
 }
 
+// openGym's poster ground — the same gradient / lime glow / faint grid the summary poster
+// uses, pulled out so the stats card can share it.
+function drawGridGround(ctx) {
+  const g = ctx.createLinearGradient(0, 0, 0, H)
+  g.addColorStop(0, '#0e130f'); g.addColorStop(1, '#090b08')
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
+  const glow = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, W * 0.8)
+  glow.addColorStop(0, 'rgba(207,255,4,.14)'); glow.addColorStop(1, 'rgba(207,255,4,0)')
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H * 0.5)
+  ctx.strokeStyle = 'rgba(255,255,255,.035)'; ctx.lineWidth = 1
+  for (let gx = 0; gx <= W; gx += 108) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke() }
+  for (let gy = 0; gy <= H; gy += 108) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke() }
+}
+
+// One centered row of the stats layout: [lime icon]  BIG NUMBER unit  —  caps label under.
+// The number (never the icon or label) shrinks if a very large volume would overrun the width.
+function drawStatRow(ctx, cy, glyph, value, unit, label) {
+  const icon = 84, gap = 30, ug = 14
+  let ns = 132
+  const meas = () => {
+    ctx.font = `400 ${ns}px "Archivo Black"`
+    const nw = ctx.measureText(value).width
+    let uw = 0
+    if (unit) { ctx.font = `700 ${Math.round(ns * 0.32)}px Inter`; uw = ug + ctx.measureText(unit).width }
+    return { nw, uw }
+  }
+  let m = meas()
+  while (icon + gap + m.nw + m.uw > W - 100 && ns > 74) { ns -= 6; m = meas() }
+
+  let x = (W - (icon + gap + m.nw + m.uw)) / 2
+  drawGlyph(ctx, glyph, x, cy - icon / 2 - 8, icon, ACC)
+  x += icon + gap
+
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+  ctx.font = `400 ${ns}px "Archivo Black"`; ctx.fillStyle = '#fff'
+  ctx.fillText(value, x, cy)
+  if (unit) {
+    ctx.font = `700 ${Math.round(ns * 0.32)}px Inter`; ctx.fillStyle = 'rgba(255,255,255,.7)'
+    ctx.fillText(unit, x + m.nw + ug, cy)
+  }
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'
+  ctx.font = '600 38px Inter'; ctx.fillStyle = 'rgba(255,255,255,.82)'
+  ctx.save(); try { ctx.letterSpacing = '3px' } catch (e) { /* not everywhere */ }
+  ctx.fillText(label.toUpperCase(), W / 2, cy + ns / 2 + 40)
+  ctx.restore()
+}
+
+// Freeletics-style stack: wordmark, date, then four big numbers (duration / calories / week
+// progress / sets·reps), closing on the workout title. `transparent` keeps the ground clear
+// (a heavy text shadow carries it over a photo); otherwise it sits on drawGridGround.
+function drawStats(ctx, data, transparent) {
+  if (!transparent) drawGridGround(ctx)
+  ctx.textBaseline = 'alphabetic'
+  if (transparent) { ctx.shadowColor = 'rgba(0,0,0,.82)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 4 }
+
+  // wordmark
+  ctx.textAlign = 'left'; ctx.font = '700 42px Inter'
+  const mk = 46, mgap = 16
+  const wmW = ctx.measureText('openGym').width
+  const wx = (W - (mk + mgap + wmW)) / 2
+  drawGlyph(ctx, 'dumbbell', wx, 150, mk, ACC)
+  ctx.fillStyle = '#fff'; ctx.fillText('openGym', wx + mk + mgap, 188)
+
+  // date
+  ctx.textAlign = 'center'
+  ctx.save(); try { ctx.letterSpacing = '4px' } catch (e) { /* not everywhere */ }
+  ctx.font = '600 32px Inter'; ctx.fillStyle = 'rgba(255,255,255,.6)'
+  ctx.fillText(data.date.toUpperCase(), W / 2, 270)
+  ctx.restore()
+
+  const rows = [
+    ['timer', data.duration, '', t('Duration')],
+    ['flame', data.kcal != null ? String(data.kcal) : '—', data.kcal != null ? 'kcal' : '', t('Calories')],
+    ['calendar', data.week, '', t('Workouts this week')],
+    ['figure', `${data.sets} · ${data.reps}`, '', t('Sets') + ' · ' + t('Reps')],
+  ]
+  const first = 500, pitch = 300
+  rows.forEach(([g, val, unit, label], i) => drawStatRow(ctx, first + i * pitch, g, val, unit, label))
+
+  // footer: the workout title
+  const fy = H - 210
+  ctx.strokeStyle = transparent ? 'rgba(255,255,255,.4)' : 'rgba(255,255,255,.14)'; ctx.lineWidth = 3
+  ctx.beginPath(); ctx.moveTo(90, fy); ctx.lineTo(W - 90, fy); ctx.stroke()
+  ctx.textAlign = 'center'
+  let ts = 100
+  const title = data.routine.toUpperCase()
+  ctx.font = `400 ${ts}px "Archivo Black"`
+  while (ctx.measureText(title).width > W - 140 && ts > 44) { ts -= 4; ctx.font = `400 ${ts}px "Archivo Black"` }
+  ctx.fillStyle = ACC
+  ctx.fillText(title, W / 2, fy + ts + 4)
+}
+
 export async function renderShareCard(variantId, w, S, opts = {}) {
   await ensureFonts()
   const canvas = document.createElement('canvas')
@@ -300,6 +428,8 @@ export async function renderShareCard(variantId, w, S, opts = {}) {
   const ctx = canvas.getContext('2d')
   const data = buildCardData(w, S)
   if (variantId === 'poster') drawPoster(ctx, data)
+  else if (variantId === 'stats') drawStats(ctx, data, true)
+  else if (variantId === 'stats-card') drawStats(ctx, data, false)
   else drawCard(ctx, data, opts.background || 'transparent')
   return new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
 }

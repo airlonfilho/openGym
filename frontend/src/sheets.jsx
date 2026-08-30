@@ -1268,64 +1268,90 @@ function FinishSummary({ w, prs, e1prs = [], earned = [], close }) {
   </div>
 }
 
-// Two steps: pick a format, then preview it — the preview's own "Compartilhar" tap is what
-// actually calls the Web Share API. Calling it right after the async render (fonts load,
-// canvas draws) instead would arrive with no user gesture left to spend and Safari silently
-// refuses it, so the format pick can only ever kick off the render, never the share itself.
-function ShareCardSheet({ close, w }) {
-  const [variant, setVariant] = useState(null)
-  const [blob, setBlob] = useState(null)
-  const [url, setUrl] = useState(null)
-  const [busy, setBusy] = useState(false)
+// All four models are rendered up front so the picker shows a real preview of each; tapping
+// one opens the larger preview whose own "Compartilhar" tap calls the Web Share API. That
+// last step must be its own gesture — calling share straight after an async render arrives
+// with no user activation left and Safari silently refuses it — but the blobs are ready by
+// then, so the tap only has to hand one off.
+const CHECKER = 'repeating-conic-gradient(var(--surface-3) 0% 25%, var(--surface-2) 0% 50%) 0 0/22px 22px'
+const isClear = id => id === 'overlay' || id === 'stats'
 
-  const pick = async id => {
-    setVariant(id); setBusy(true); setBlob(null); setUrl(null)
-    try {
-      const b = await renderShareCard(id, w, S(), { background: id === 'overlay' ? 'transparent' : undefined })
-      setBlob(b); setUrl(URL.createObjectURL(b))
-    } catch (e) { toast(t('Could not create the image')); setVariant(null) }
-    setBusy(false)
-  }
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url) }, [url])
+function ShareCardSheet({ close, w }) {
+  const [cards, setCards] = useState({})   // { [id]: { blob, url } }
+  const [variant, setVariant] = useState(null)
+  const [failed, setFailed] = useState(false)
+  const urls = useRef([])
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        for (const v of SHARE_VARIANTS) {
+          const b = await renderShareCard(v.id, w, S())
+          if (!alive) return
+          const u = URL.createObjectURL(b); urls.current.push(u)
+          setCards(c => ({ ...c, [v.id]: { blob: b, url: u } }))
+        }
+      } catch (e) { if (alive) setFailed(true) }
+    })()
+    return () => { alive = false; urls.current.forEach(u => URL.revokeObjectURL(u)) }
+  }, [])
 
   const send = async () => {
+    const card = cards[variant]
+    if (!card) return
     const filename = 'opengym-' + variant + '-' + w.d + '.png'
     try {
-      const file = new File([blob], filename, { type: 'image/png' })
+      const file = new File([card.blob], filename, { type: 'image/png' })
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file] }); close(); return
       }
     } catch (e) { if (e.name === 'AbortError') return }
-    if (MOBILE) { await shareImage(blob, filename); close(); return }
-    const a = document.createElement('a'); a.href = url; a.download = filename; a.click()
+    if (MOBILE) { await shareImage(card.blob, filename); close(); return }
+    const a = document.createElement('a'); a.href = card.url; a.download = filename; a.click()
     close()
   }
 
+  if (failed) return <>
+    <h3>{t('Share this workout')}</h3>
+    <div className="dim small">{t('Could not create the image')}</div>
+  </>
+
   if (!variant) return <>
     <h3>{t('Share this workout')}</h3>
-    <div className="sect-b">
-      {SHARE_VARIANTS.map(v => (
-        <button key={v.id} className="lrow tap" onClick={() => pick(v.id)}>
-          <span className="lrow-m"><span className="lrow-t">{t(v.name)}</span><span className="lrow-s">{t(v.desc)}</span></span>
-          <Icon name="chevronRight" className="lrow-c" />
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      {SHARE_VARIANTS.map(v => {
+        const card = cards[v.id]
+        return <button key={v.id} className="tap" disabled={!card} onClick={() => setVariant(v.id)}
+          style={{ background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: card ? 'pointer' : 'default' }}>
+          <div style={{
+            aspectRatio: '9/16', borderRadius: 12, overflow: 'hidden', marginBottom: 8,
+            border: '1px solid var(--sep)',
+            background: isClear(v.id) ? CHECKER : 'var(--surface-2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            {card ? <img src={card.url} alt="" style={{ width: '100%', display: 'block' }} />
+              : <span className="dim small">{t('Generating…')}</span>}
+          </div>
+          <div className="tt" style={{ fontSize: 15 }}>{t(v.kind)}</div>
+          <div className="ss">{t(v.name)}</div>
         </button>
-      ))}
+      })}
     </div>
   </>
 
   const cur = SHARE_VARIANTS.find(v => v.id === variant)
+  const card = cards[variant]
   return <>
-    <h3>{t(cur.name)}</h3>
+    <h3>{t(cur.kind)} · {t(cur.name)}</h3>
     <div style={{
       width: '100%', aspectRatio: '9/16', borderRadius: 14, marginBottom: 14, overflow: 'hidden',
-      background: variant === 'overlay'
-        ? 'repeating-conic-gradient(var(--surface-3) 0% 25%, var(--surface-2) 0% 50%) 0 0/28px 28px'
-        : 'var(--surface-2)',
+      background: isClear(variant) ? CHECKER : 'var(--surface-2)',
       display: 'flex', alignItems: 'center', justifyContent: 'center'
     }}>
-      {busy || !url ? <div className="dim small">{t('Generating…')}</div> : <img src={url} style={{ width: '100%', display: 'block' }} />}
+      {card ? <img src={card.url} style={{ width: '100%', display: 'block' }} /> : <div className="dim small">{t('Generating…')}</div>}
     </div>
-    <Button variant="primary" disabled={busy || !url} onClick={send}>{t('Share')}</Button>
+    <Button variant="primary" disabled={!card} onClick={send}>{t('Share')}</Button>
     <div style={{ height: 8 }} />
     <Button variant="ghost" className="dim" onClick={() => setVariant(null)}>{t('Choose another format')}</Button>
   </>

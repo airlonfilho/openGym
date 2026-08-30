@@ -621,6 +621,8 @@ export default {
 
   // --- share card ---
   'Share this workout': 'Compartilhar este treino',
+  'Summary': 'Resumo',
+  'Workouts this week': 'Treinos na semana',
   'Sticker': 'Adesivo',
   'Card': 'Cartão',
   'Transparent — layer it over your own photo in Instagram': 'Transparente — sobreponha na sua própria foto no Instagram',
