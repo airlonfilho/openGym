@@ -22,7 +22,7 @@ import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
 import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC, MAX_BW_SETS } from './lib/progression.js'
 import { BADGES, newlyEarned } from './lib/achievements.js'
 import { MOBILE, shareExport, shareImage } from './lib/mobile.js'
-import { listPhotos, getPhotoBlob, savePhoto, deletePhoto } from './lib/photos.js'
+import { listPhotos, getPhotoBlob, savePhoto, deletePhoto, readPhotoDate } from './lib/photos.js'
 import { renderShareCard, SHARE_VARIANTS } from './lib/sharecard.js'
 
 const S = () => useStore.getState().S
@@ -295,11 +295,27 @@ function PhotoSheet({ close, date, onSaved }) {
   const [d, setD] = useState(date || todayISO())
   const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
-  const fileRef = useRef(null)
+  // Once the user picks a date by hand, a later gallery pick won't silently move it.
+  const [dateEdited, setDateEdited] = useState(!!date)
+  const [dateFromExif, setDateFromExif] = useState(false)
+  const camRef = useRef(null)
+  const galRef = useRef(null)
   const preview = file ? URL.createObjectURL(file) : null
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
+
+  const pick = async (f, fromGallery) => {
+    if (!f) return
+    setFile(f)
+    // A gallery photo carries its own date — drop it on the right day of the timeline
+    // automatically, unless the user has already chosen a date.
+    if (fromGallery && !dateEdited) {
+      const taken = await readPhotoDate(f)
+      if (taken) { setD(taken); setDateFromExif(true) }
+    }
+  }
+
   const save = async () => {
-    if (!file) { fileRef.current?.click(); return }
+    if (!file) { galRef.current?.click(); return }
     setBusy(true)
     await savePhoto(file, d)
     setBusy(false)
@@ -307,16 +323,29 @@ function PhotoSheet({ close, date, onSaved }) {
     onSaved && onSaved()
     toast(t('Photo saved'))
   }
+
   return <>
     <h3>{t('Add progress photo')}</h3>
-    <input type="date" className="input" value={d} max={todayISO()} onChange={e => e.target.value && setD(e.target.value)} style={{ marginBottom: 14 }} />
-    <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => e.target.files[0] && setFile(e.target.files[0])} />
+    <input type="date" className="input" value={d} max={todayISO()}
+      onChange={e => { if (e.target.value) { setD(e.target.value); setDateEdited(true); setDateFromExif(false) } }}
+      style={{ marginBottom: dateFromExif ? 4 : 14 }} />
+    {dateFromExif && <div className="small dim" style={{ marginBottom: 14 }}>{t('Date read from the photo — change it if it’s wrong.')}</div>}
+
+    <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => pick(e.target.files[0], false)} />
+    <input ref={galRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => pick(e.target.files[0], true)} />
+
     {preview
       ? <img src={preview} style={{ width: '100%', maxHeight: 340, objectFit: 'contain', borderRadius: 14, marginBottom: 14, display: 'block', background: 'var(--surface-2)' }} />
-      : <button onClick={() => fileRef.current?.click()} style={{
-        width: '100%', aspectRatio: '3/4', maxHeight: 260, borderRadius: 14, border: '2px dashed var(--sep)', background: 'none',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--label-2)', marginBottom: 14
-      }}><Icon name="camera" size={30} /><span className="small">{t('Choose photo')}</span></button>}
+      : <div className="row" style={{ gap: 8, marginBottom: 14 }}>
+        {[{ ref: galRef, icon: 'image', label: t('From gallery') }, { ref: camRef, icon: 'camera', label: t('Take photo') }].map(o => (
+          <button key={o.icon} onClick={() => o.ref.current?.click()} style={{
+            flex: 1, aspectRatio: '3/4', maxHeight: 220, borderRadius: 14, border: '2px dashed var(--sep)', background: 'none',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--label-2)'
+          }}><Icon name={o.icon} size={28} /><span className="small">{o.label}</span></button>
+        ))}
+      </div>}
+
+    {preview && <Button variant="ghost" icon="image" onClick={() => galRef.current?.click()} style={{ marginBottom: 8 }}>{t('Choose a different photo')}</Button>}
     <Button variant="primary" disabled={busy} onClick={save}>{file ? t('Save') : t('Choose photo')}</Button>
   </>
 }

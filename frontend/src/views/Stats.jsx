@@ -275,16 +275,22 @@ export default function Stats() {
         <h2 style={{ margin: 0 }}>{t('Progress photos')}</h2>
         <Button size="sm" icon="plus" onClick={() => photoSheet({ onSaved: reloadPhotos })}>{t('Add')}</Button>
       </div>
-      {photos.length ? (
-        <div className="row" style={{ gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-          {[...photos].reverse().map(p => (
+      {photos.length ? (<>
+        {photos.length > 1 && <div className="small dim" style={{ marginBottom: 8 }}>
+          {fmtDate(photos[0].d, true)} → {fmtDate(photos[photos.length - 1].d, true)}
+        </div>}
+        {/* Oldest → newest so the strip reads left-to-right as a timeline; each shot keeps
+            its date underneath it. */}
+        <div className="row" style={{ gap: 10, overflowX: 'auto', paddingBottom: 2 }}>
+          {photos.map(p => (
             <button key={p.id} onClick={() => photoDetailSheet(p.id, p.d, reloadPhotos)}
-              style={{ flexShrink: 0, width: 72, height: 96, borderRadius: 10, overflow: 'hidden', border: 'none', padding: 0 }}>
-              <PhotoImg id={p.id} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              style={{ flexShrink: 0, width: 96, border: 'none', padding: 0, background: 'none' }}>
+              <PhotoImg id={p.id} style={{ width: '100%', height: 128, objectFit: 'cover', borderRadius: 10 }} />
+              <div className="small muted" style={{ textAlign: 'center', marginTop: 4 }}>{fmtDate(p.d, true)}</div>
             </button>
           ))}
         </div>
-      ) : <div className="muted small">{t('No photos yet — add one to start tracking visually.')}</div>}
+      </>) : <div className="muted small">{t('No photos yet — add one to start tracking visually.')}</div>}
     </div>
 
     <div className="card">
