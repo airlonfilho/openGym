@@ -16,7 +16,7 @@ import { loadOfWorkouts, rankOf, MUSCLE_NAME } from './muscles.js'
 import { avgRir } from './effort.js'
 
 const W = 1080, H = 1920
-const ACC = '#CFFF04'
+export const ACC = '#CFFF04'
 const FONT_BASE = 'fonts/'
 
 export const SHARE_VARIANTS = [
@@ -27,7 +27,7 @@ export const SHARE_VARIANTS = [
 ]
 
 let fontsReady = null
-function ensureFonts() {
+export function ensureFonts() {
   if (!fontsReady) {
     fontsReady = Promise.all([
       new FontFace('Archivo Black', `url(${FONT_BASE}archivo-black.woff2)`, { weight: '400' }).load(),
@@ -132,7 +132,7 @@ function drawGlyph(ctx, kind, x, y, size, color) {
 }
 
 // Dumbbell mark — kept as its own name for the many callers that predate the other glyphs.
-function drawMark(ctx, x, y, size, color) { drawGlyph(ctx, 'dumbbell', x, y, size, color) }
+export function drawMark(ctx, x, y, size, color) { drawGlyph(ctx, 'dumbbell', x, y, size, color) }
 
 // Shrinks the overlay's title font until `text` fits on one line under maxWidth — a long
 // routine name gets smaller rather than wrapping and breaking that layout's fixed spacing.
@@ -329,8 +329,8 @@ function drawPoster(ctx, data) {
 }
 
 // openGym's poster ground — the same gradient / lime glow / faint grid the summary poster
-// uses, pulled out so the stats card can share it.
-function drawGridGround(ctx) {
+// uses, pulled out so the stats card (and the progress-photo comparison card) can share it.
+export function drawGridGround(ctx) {
   const g = ctx.createLinearGradient(0, 0, 0, H)
   g.addColorStop(0, '#0e130f'); g.addColorStop(1, '#090b08')
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)

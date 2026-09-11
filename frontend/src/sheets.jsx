@@ -24,6 +24,7 @@ import { BADGES, newlyEarned } from './lib/achievements.js'
 import { MOBILE, shareExport, shareImage } from './lib/mobile.js'
 import { listPhotos, getPhotoBlob, savePhoto, deletePhoto } from './lib/photos.js'
 import { renderShareCard, SHARE_VARIANTS } from './lib/sharecard.js'
+import { renderPhotoShareCard, PHOTO_SHARE_VARIANTS } from './lib/photo-sharecard.js'
 
 const S = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -357,6 +358,7 @@ function PhotoCompareSheet({ close, firstId }) {
       </div> : <div className="muted small">{t('Add another photo first to compare.')}</div>}
     </>
   }
+  const [before, after] = [first, second].sort((a, b) => (a.d < b.d ? -1 : 1))
   return <>
     <h3>{t('Compare')}</h3>
     <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
@@ -365,9 +367,94 @@ function PhotoCompareSheet({ close, firstId }) {
         <div className="small muted" style={{ textAlign: 'center', marginTop: 6 }}>{fmtDate(p.d, true)}</div>
       </div>)}
     </div>
+    <div style={{ height: 14 }} />
+    <Button variant="primary" icon="camera" onClick={() => { close(); photoShareCardSheet(before, after) }}>{t('Share this comparison')}</Button>
   </>
 }
 export const photoCompareSheet = firstId => ui().openSheet(close => <PhotoCompareSheet close={close} firstId={firstId} />)
+
+// Same two-step flow as ShareCardSheet (pick a model → big preview → share), but Stories-only:
+// the two photos are themselves the content, so there's no transparent-sticker variant to
+// layer over something else, just the three compositions in photo-sharecard.js.
+function PhotoShareCardSheet({ close, before, after }) {
+  const [cards, setCards] = useState({})
+  const [variant, setVariant] = useState(null)
+  const [failed, setFailed] = useState(false)
+  const urls = useRef([])
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        for (const v of PHOTO_SHARE_VARIANTS) {
+          const b = await renderPhotoShareCard(v.id, before, after, S())
+          if (!alive) return
+          const u = URL.createObjectURL(b); urls.current.push(u)
+          setCards(c => ({ ...c, [v.id]: { blob: b, url: u } }))
+        }
+      } catch (e) { if (alive) setFailed(true) }
+    })()
+    return () => { alive = false; urls.current.forEach(u => URL.revokeObjectURL(u)) }
+  }, [])
+
+  const send = async () => {
+    const card = cards[variant]
+    if (!card) return
+    const filename = 'opengym-compare-' + variant + '-' + after.d + '.png'
+    try {
+      const file = new File([card.blob], filename, { type: 'image/png' })
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] }); close(); return
+      }
+    } catch (e) { if (e.name === 'AbortError') return }
+    if (MOBILE) { await shareImage(card.blob, filename); close(); return }
+    const a = document.createElement('a'); a.href = card.url; a.download = filename; a.click()
+    close()
+  }
+
+  if (failed) return <>
+    <h3>{t('Share this comparison')}</h3>
+    <div className="dim small">{t('Could not create the image')}</div>
+  </>
+
+  if (!variant) return <>
+    <h3>{t('Share this comparison')}</h3>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      {PHOTO_SHARE_VARIANTS.map(v => {
+        const card = cards[v.id]
+        return <button key={v.id} className="tap" disabled={!card} onClick={() => setVariant(v.id)}
+          style={{ background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: card ? 'pointer' : 'default' }}>
+          <div style={{
+            aspectRatio: '9/16', borderRadius: 12, overflow: 'hidden', marginBottom: 8,
+            border: '1px solid var(--sep)', background: 'var(--surface-2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            {card ? <img src={card.url} alt="" style={{ width: '100%', display: 'block' }} />
+              : <span className="dim small">{t('Generating…')}</span>}
+          </div>
+          <div className="tt" style={{ fontSize: 15 }}>{t(v.name)}</div>
+          <div className="ss">{t(v.desc)}</div>
+        </button>
+      })}
+    </div>
+  </>
+
+  const cur = PHOTO_SHARE_VARIANTS.find(v => v.id === variant)
+  const card = cards[variant]
+  return <>
+    <h3>{t(cur.name)}</h3>
+    <div style={{
+      width: '100%', aspectRatio: '9/16', borderRadius: 14, marginBottom: 14, overflow: 'hidden',
+      background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center'
+    }}>
+      {card ? <img src={card.url} style={{ width: '100%', display: 'block' }} /> : <div className="dim small">{t('Generating…')}</div>}
+    </div>
+    <Button variant="primary" disabled={!card} onClick={send}>{t('Share')}</Button>
+    <div style={{ height: 8 }} />
+    <Button variant="ghost" className="dim" onClick={() => setVariant(null)}>{t('Choose another format')}</Button>
+  </>
+}
+export const photoShareCardSheet = (before, after) => ui().openSheet(close => <PhotoShareCardSheet close={close} before={before} after={after} />)
 
 /* ============================ import from another app ============================ */
 // Shows what a parsed export would actually do before anything is written. An import is

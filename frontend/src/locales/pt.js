@@ -609,6 +609,17 @@ export default {
   'Compare with…': 'Comparar com…',
   'Add another photo first to compare.': 'Adicione outra foto primeiro para comparar.',
   'Compare': 'Comparar',
+  'Share this comparison': 'Compartilhar comparação',
+  'Side by side': 'Lado a lado',
+  'Split down the middle, a date on each half': 'Dividida ao meio, com a data de cada lado',
+  'Stacked': 'Empilhado',
+  'One photo over the other, weight change on the seam': 'Uma foto em cima da outra, com a variação de peso na emenda',
+  'Diagonal': 'Diagonal',
+  'Diagonal cut, transformation-post style': 'Corte diagonal, estilo post de transformação',
+  'Before': 'Antes',
+  'After': 'Depois',
+  'Weight lost': 'Peso perdido',
+  'Weight gained': 'Peso ganho',
 
   // --- streaks & achievements ---
   'Streaks & achievements': 'Sequências e conquistas',
